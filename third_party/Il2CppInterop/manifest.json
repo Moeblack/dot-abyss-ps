@@ -1,0 +1,19 @@
+{
+  "format": "dotabyss-interop-compat-1",
+  "date": "2026-11-01",
+  "platform": "Windows x64",
+  "game_version": "1.15.0",
+  "bepinex": "6.0.0-be.791+b782da4",
+  "interop_version": "1.5.3.0",
+  "upstream_commit": "dbda1cb353b0f4253345dc45136d170b9e50a5a0",
+  "files": {
+    "Il2CppInterop.Runtime.dll": {
+      "original": "65ab051a681c2c1e52df7596ff738be401aae72cff882ff18241cf54a3ea38a4",
+      "patched": "9bd74dc51718bfb4ba7b92d36db6104d651d7083adca9d6dd378847eb74f0bcb"
+    },
+    "Il2CppInterop.HarmonySupport.dll": {
+      "original": "f7612ea2e5a4d473b771f34ee3b20cf32dc0c4ecea0185416474999a17fbcc07",
+      "patched": "bd77755f1525cb46fc408e2f2ac3df962e657c82dd01feac6a48f08bf3c754d8"
+    }
+  }
+}

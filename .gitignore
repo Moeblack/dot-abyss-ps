@@ -116,3 +116,8 @@ StreamingAssets/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Distributed interoperability fixes and their upstream build reference
+!/Il2CppInterop.Runtime.dll
+!/Il2CppInterop.HarmonySupport.dll
+!/third_party/Il2CppInterop/Il2CppInterop.Runtime/Libs/Il2Cppmscorlib.dll

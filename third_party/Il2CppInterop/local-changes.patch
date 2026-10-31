@@ -1,0 +1,92 @@
+diff --git a/Il2CppInterop.HarmonySupport/Il2CppDetourMethodPatcher.cs b/Il2CppInterop.HarmonySupport/Il2CppDetourMethodPatcher.cs
+index 2accee3..7a555e7 100644
+--- a/Il2CppInterop.HarmonySupport/Il2CppDetourMethodPatcher.cs
++++ b/Il2CppInterop.HarmonySupport/Il2CppDetourMethodPatcher.cs
+@@ -273,7 +273,7 @@ internal unsafe class Il2CppDetourMethodPatcher : MethodPatcher
+ 
+         if (!Original.IsStatic)
+         {
+-            EmitConvertArgumentToManaged(il, paramStartIndex - 1, Original.DeclaringType, out _);
++            EmitConvertArgumentToManaged(il, paramStartIndex - 1, Original.DeclaringType, out _, isInstance: true);
+         }
+ 
+         for (var i = 0; i < managedParams.Length; ++i)
+@@ -366,7 +366,8 @@ internal unsafe class Il2CppDetourMethodPatcher : MethodPatcher
+     private static void EmitConvertArgumentToManaged(ILGenerator il,
+         int argIndex,
+         Type managedParamType,
+-        out LocalBuilder variable)
++        out LocalBuilder variable,
++        bool isInstance = false)
+     {
+         variable = null;
+ 
+@@ -375,6 +376,12 @@ internal unsafe class Il2CppDetourMethodPatcher : MethodPatcher
+         if (needsBoxing)
+         {
+             var classPtr = Il2CppClassPointerStore.GetNativeClassPointer(managedParamType);
++            var isWindowsX64 = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
++                               RuntimeInformation.ProcessArchitecture == Architecture.X64;
++            uint valueAlignment = 0;
++            var nativeSize = isWindowsX64 && !isInstance && !managedParamType.IsByRef
++                ? IL2CPP.il2cpp_class_value_size(classPtr, ref valueAlignment)
++                : 0;
+ 
+             // il2cpp_value_box uses .NET boxing semantics which boxes Nullable<T> as just T,
+             // losing the HasValue field. Manually box Nullable<T> to preserve full data.
+@@ -391,7 +398,7 @@ internal unsafe class Il2CppDetourMethodPatcher : MethodPatcher
+                 il.Emit(OpCodes.Call, AccessTools.Method(typeof(IL2CPP), nameof(IL2CPP.il2cpp_object_new)));
+                 var objLocal = il.DeclareLocal(typeof(IntPtr));
+                 il.Emit(OpCodes.Stloc, objLocal);
+-                il.Emit(Environment.Is64BitProcess ? OpCodes.Ldarg : OpCodes.Ldarga_S, argIndex);
++                ValueTypeArgument.Emit(il, argIndex, Environment.Is64BitProcess, isWindowsX64, isInstance, managedParamType.IsByRef, nativeSize);
+                 il.Emit(OpCodes.Ldloc, objLocal);
+                 il.Emit(OpCodes.Call, AccessTools.Method(typeof(IL2CPP), nameof(IL2CPP.il2cpp_object_unbox)));
+                 il.Emit(OpCodes.Ldc_I4, (int)valueSize);
+@@ -403,9 +410,8 @@ internal unsafe class Il2CppDetourMethodPatcher : MethodPatcher
+                 // Box struct into object first before conversion
+                 il.Emit(OpCodes.Ldc_I8, classPtr.ToInt64());
+                 il.Emit(OpCodes.Conv_I);
+-                // On x64, struct is always a pointer but it is a non-pointer on x86
+-                // We don't handle byref structs on x86 yet but we're yet to encounter those
+-                il.Emit(Environment.Is64BitProcess ? OpCodes.Ldarg : OpCodes.Ldarga_S, argIndex);
++                // Windows x64 passes small structs in the argument slot, not through a data pointer.
++                ValueTypeArgument.Emit(il, argIndex, Environment.Is64BitProcess, isWindowsX64, isInstance, managedParamType.IsByRef, nativeSize);
+                 il.Emit(OpCodes.Call,
+                     AccessTools.Method(typeof(IL2CPP),
+                         nameof(IL2CPP.il2cpp_value_box)));
+diff --git a/Il2CppInterop.Runtime/IL2CPP.cs b/Il2CppInterop.Runtime/IL2CPP.cs
+index 0cb5aca..8bc3305 100644
+--- a/Il2CppInterop.Runtime/IL2CPP.cs
++++ b/Il2CppInterop.Runtime/IL2CPP.cs
+@@ -288,7 +288,7 @@ public static unsafe class IL2CPP
+                 objectPointer = *(IntPtr*)objectPointer;
+         }
+ 
+-        if (!valueTypeWouldBeBoxed && il2cpp_class_is_valuetype(Il2CppClassPointerStore<T>.NativeClassPtr))
++        else if (!valueTypeWouldBeBoxed && il2cpp_class_is_valuetype(Il2CppClassPointerStore<T>.NativeClassPtr))
+             objectPointer = il2cpp_value_box(Il2CppClassPointerStore<T>.NativeClassPtr, objectPointer);
+ 
+         if (typeof(T) == typeof(string))
+diff --git a/Il2CppInterop.HarmonySupport/ValueTypeArgument.cs b/Il2CppInterop.HarmonySupport/ValueTypeArgument.cs
+new file mode 100644
+--- /dev/null
++++ b/Il2CppInterop.HarmonySupport/ValueTypeArgument.cs
+@@ -0,0 +1,17 @@
++using System.Reflection.Emit;
++
++namespace Il2CppInterop.HarmonySupport;
++
++internal static class ValueTypeArgument
++{
++    internal static bool UseAddress(bool is64Bit, bool isWindowsX64, bool isInstance, bool isByRef, int nativeSize)
++        => !is64Bit || (isWindowsX64 && !isInstance && !isByRef && nativeSize is 1 or 2 or 4 or 8);
++
++    internal static void Emit(ILGenerator il, int index, bool is64Bit, bool isWindowsX64, bool isInstance, bool isByRef, int nativeSize)
++    {
++        var opcode = UseAddress(is64Bit, isWindowsX64, isInstance, isByRef, nativeSize)
++            ? index <= byte.MaxValue ? OpCodes.Ldarga_S : OpCodes.Ldarga
++            : OpCodes.Ldarg;
++        il.Emit(opcode, index);
++    }
++}
