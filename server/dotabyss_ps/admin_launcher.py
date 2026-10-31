@@ -14,7 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .assets import AssetCatalog
+from .asset_index import PC_CATALOG_HASH_PATH, PC_CATALOG_PATH, PC_CATALOG_PREFIX
+from .assets import AssetCatalog, AssetDataError
 from .gameplay_catalog import GameplayError
 from .process_lock import ProcessLockBusy, exclusive_process_lock
 
@@ -78,7 +79,9 @@ def game_processes(executable):
     return result
 
 
-def read_object(path, limit=2 * 1024 * 1024):
+def read_object(path, limit=2 * 1024 * 1024, *, missing_ok=False):
+    if missing_ok and not path.exists() and not path.is_symlink():
+        return None
     if not path.is_file() or path.is_symlink() or path.stat().st_size > limit:
         raise ValueError("启动配置不存在、过大或不是普通文件：" + path.name)
     def unique(items):
@@ -125,8 +128,8 @@ class GameLauncher:
         if not isinstance(name, str) or Path(name).name != name or not name.lower().endswith(".exe"):
             raise ValueError("本地游戏可执行文件配置无效")
         executable = (self.client_root / name).resolve()
-        config = (self.client_root / "BepInEx" / "plugins" / "DotAbyss.Local.Pc" / "pc-local.json").resolve()
-        if not executable.is_relative_to(self.client_root) or not config.is_relative_to(self.client_root):
+        config = self.client_root / "BepInEx" / "plugins" / "DotAbyss.Local.Pc" / "pc-local.json"
+        if not executable.is_relative_to(self.client_root) or not config.resolve().is_relative_to(self.client_root):
             raise ValueError("游戏路径离开已准备的客户端目录")
         return release, executable, config
 
@@ -173,10 +176,11 @@ class GameLauncher:
             _, executable, config_path = self._paths()
             if not executable.is_file():
                 raise ValueError("尚未准备本地游戏客户端")
-            config = read_object(config_path, 65536)
-            name = config.get("Profile")
+            config = read_object(config_path, 65536, missing_ok=True)
+            name = config.get("Profile") if config is not None else None
             result.update(available=True, status="ready", configured_profile_name=name,
-                          configured_profile_id=self._profile_id(name), can_start=True)
+                          configured_profile_id=self._profile_id(name), can_start=True,
+                          reason="首次启动时自动生成游戏配置。" if config is None else "")
             running = game_processes(executable)
             if running:
                 process = running[0]
@@ -203,9 +207,20 @@ class GameLauncher:
         master = self.local._active()
         if master["client"]["package"] != "dotabyss_x_cl" or master["client"]["version"] != release["application_version"]:
             raise GameplayError("本地客户端与服务端版本不一致", 409, 4098)
-        assets = AssetCatalog(self.store.path.parent, self.store).status()
+        catalog = AssetCatalog(self.store.path.parent, self.store)
+        assets = catalog.status()
         if not assets.get("active") or assets.get("error"):
             raise GameplayError("本地游戏资源未就绪：" + assets.get("error", "缺少资源清单"), 503, 5038)
+        if assets["active"].get("catalog_served") is not True:
+            raise GameplayError("本地游戏资源未就绪：缺少 PC catalog 请求路径映射，请重新导入资源。", 503, 5038)
+        try:
+            active_assets = catalog.active()
+        except AssetDataError as error:
+            raise GameplayError("本地游戏资源未就绪：" + str(error), 503, 5038) from error
+        if (not active_assets or active_assets.get("prefix") != PC_CATALOG_PREFIX
+                or active_assets.get("catalog", {}).get("relative_path") != PC_CATALOG_PATH
+                or active_assets.get("catalog_hash", {}).get("relative_path") != PC_CATALOG_HASH_PATH):
+            raise GameplayError("本地游戏资源未就绪：PC catalog 请求路径映射不匹配，请重新导入资源。", 503, 5038)
         manifest = self._verify_client(release)
         plugin = self.client_root / "BepInEx" / "plugins" / "DotAbyss.Local.Pc" / "DotAbyss.Local.Pc.dll"
         if not plugin.is_file():
@@ -247,15 +262,20 @@ class GameLauncher:
         manifest = self._preflight(release)
         if game_processes(executable):
             raise GameplayError("检查期间已有游戏启动，请刷新状态后再试", 409, 4098)
-        original = config_path.read_bytes()
-        config = read_object(config_path, 65536)
+        config = read_object(config_path, 65536, missing_ok=True)
+        original = config_path.read_bytes() if config is not None else None
+        if config is None:
+            config = {"ExpectedCompany": release["identity"]["company"], "ExpectedProduct": release["identity"]["product"],
+                      "ExpectedPersistentPath": manifest["profile"], "TimeoutSeconds": 20}
         if (config.get("ExpectedCompany") != "LocalGames" or config.get("ExpectedProduct") != "DotAbyssLocalPlayer"
                 or config.get("ExpectedPersistentPath") != manifest["profile"]):
             raise GameplayError("客户端隔离身份配置不匹配", 409, 4098)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        backup = self.project_root / "artifacts" / "launcher" / ("pc-local-" + stamp + ".json")
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        backup.write_bytes(original)
+        backup = None
+        if original is not None:
+            backup = self.project_root / "artifacts" / "launcher" / ("pc-local-" + stamp + ".json")
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            backup.write_bytes(original)
         log_path = self.project_root / "artifacts" / "pc-run" / ("Player-" + stamp + ".log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         config.update(Profile=profile["name"], ServiceOrigin=origin)
@@ -275,12 +295,16 @@ class GameLauncher:
                 raise OSError("游戏进程在初始化前退出，代码 " + str(code))
             found = next((item for item in game_processes(executable) if item.pid == process.pid), None)
             receipt = {"pid": process.pid, "profile_id": profile_id, "profile_name": profile["name"], "launched_at": time.time(),
-                       "process_started_at": found.started_at if found else None, "log_path": str(log_path), "config_backup": str(backup)}
+                       "process_started_at": found.started_at if found else None, "log_path": str(log_path),
+                       "config_backup": str(backup) if backup else None}
             atomic_bytes(self.receipt_path, json.dumps(receipt, ensure_ascii=False).encode("utf-8"))
         except (OSError, ValueError) as error:
             if process is None or process.poll() is not None:
-                if config_path.read_bytes() == replacement:
-                    atomic_bytes(config_path, original)
+                if config_path.is_file() and not config_path.is_symlink() and config_path.read_bytes() == replacement:
+                    if original is None:
+                        config_path.unlink()
+                    else:
+                        atomic_bytes(config_path, original)
             raise GameplayError("游戏启动失败：" + str(error), 503, 5038) from error
         return {"available": True, "running": True, "status": "started", "launched": True, "already_running": False,
                 "pid": process.pid, "profile_id": profile_id, "profile_name": profile["name"], "active_profile_id": profile_id,
