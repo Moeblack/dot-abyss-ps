@@ -271,9 +271,9 @@ def test_equipment_rewards_include_allocated_ids_and_overflow_mail_is_clean(rewa
     rewards = [{"content_type": 70, "content_id": 11010110, "amount": 2, "sid": 12345,
                 "source_type": "enemy", "is_rare_drop": 1}]
     displayed = grant_display_rewards(game, rewards)
-    assert len(displayed) == 2
+    assert len(displayed) == 1
     assert displayed[0]["additional_info"]["t_weapon_id"] == rows(game.state, "t_weapons")[-1]["id"]
-    assert displayed[1]["additional_info"] is None
+    assert displayed[0]["is_rare_drop"] == 1
     assert len(rows(game.state, "t_weapons")) == 100
     overflow = [entry for entry in presents(game) if entry["title"] == "Inventory overflow"]
     assert len(overflow) == 1 and overflow[0]["amount"] == 1

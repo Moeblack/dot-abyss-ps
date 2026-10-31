@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from .gameplay_catalog import GameplayError, JST, number, parse_timestamp
 from .gameplay_content import weighted_choice
-from .gameplay_delivery import deliver
+from .gameplay_delivery import deliver_for_display, replay_display_rewards
 from .gameplay_economy import combined_costs, consume, owned, text_argument
 from .gameplay_library import chapter_complete
 from .gameplay_party_state import put_party_row, validate_equipment
@@ -324,15 +324,18 @@ def assign(game, body):
     return {}
 
 
-def drop_contents(rewards):
-    return [{**r, "bonus_type": 0, "is_rare_drop": 0, "additional_info": None} for r in rewards]
+def replay_response(game, route, response):
+    field = "drops" if route in ("api/idle-exploration/receive", "api/idle-exploration/boost") else "receive_contents" if route == "api/idle-exploration/instant-item" else None
+    if field is not None and field in response:
+        response[field] = replay_display_rewards(game, response[field], response.get("records", {}))
+    return response
 
 
 def receive(game, body):
     world(game)
     settle(game)
     data = progress(game)
-    granted, _ = deliver(game, data["pending"])
+    granted = deliver_for_display(game, data["pending"], include_mailed=False)
     data["pending"] = []
     status(game).update(stacked_treasure=0, has_rare_drop=0)
     relations = rows(game.state, "t_idle_exploration_party_relations")
@@ -344,7 +347,7 @@ def receive(game, body):
         status(game)["exploring_state"] = 1
     return {"grant_character_exp": sum(r["amount"] for r in granted if r["content_type"] == 110),
             "grant_gold": sum(r["amount"] for r in granted if r["content_type"] == 50),
-            "drops": drop_contents([r for r in granted if r["content_type"] not in (50, 110)])}
+            "drops": [r for r in granted if r["content_type"] not in (50, 110)]}
 
 
 def boost(game, body):
@@ -397,8 +400,8 @@ def instant_item(game, body):
     kind = {61: 50, 62: 110, 63: 30}[definition["type"]]
     rewards = [{**r, "amount": number(idle_reward_amount(game, r["content_type"], r["amount"]) * ticks, 1, 2 ** 31 - 1)} for r in base if r["content_type"] == kind]
     consume(game, [{"content_type": 30, "content_id": definition["id"], "amount": amount}])
-    received, _ = deliver(game, rewards)
-    return {"receive_contents": drop_contents(received)}
+    received = deliver_for_display(game, rewards, include_mailed=False)
+    return {"receive_contents": received}
 
 
 IDLE_ROUTES = {

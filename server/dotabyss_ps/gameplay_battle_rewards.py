@@ -7,7 +7,7 @@ from collections import Counter
 from .gameplay_catalog import GameplayError, identifiers, number
 from .gameplay_battle_modes import battle_mode
 from .gameplay_content import EQUIPMENT
-from .gameplay_delivery import deliver
+from .gameplay_delivery import deliver_for_display as grant_display_rewards
 from .gameplay_effects import extra_drop_bonus
 from .gameplay_drop_bonuses import party_bonus, save_bonus
 from .gameplay_receipts import feature_data, operation_digest
@@ -218,29 +218,6 @@ def reward_state(game):
     if set(data) != {"first_claims", "quest_claims"} or any(not isinstance(value, dict) for value in data.values()):
         raise GameplayError("Stored main-story reward receipts are invalid")
     return data
-
-
-def grant_display_rewards(game, rewards):
-    displayed = []
-    for reward in rewards:
-        kind = reward["content_type"]
-        table = "t_" + EQUIPMENT[kind][1] if kind in EQUIPMENT else None
-        before = {row["id"] for row in rows(game.state, table)} if table else set()
-        content = {key: reward[key] for key in ("content_type", "content_id", "amount")}
-        received, mailed = deliver(game, [content])
-        created = sorted(row["id"] for row in rows(game.state, table) if row["id"] not in before) if table else []
-        for granted, is_received in [(row, True) for row in received] + [(row, False) for row in mailed]:
-            content = {key: granted[key] for key in ("content_type", "content_id", "amount")}
-            extras = {"bonus_type": reward.get("bonus_type", 0), "is_rare_drop": reward.get("is_rare_drop", 0)}
-            if table and is_received:
-                for _ in range(granted["amount"]):
-                    displayed.append({**content, "amount": 1, **extras,
-                                      "additional_info": {"t_" + EQUIPMENT[kind][0] + "_id": created.pop(0)}})
-            else:
-                displayed.append({**content, **extras, "additional_info": None})
-            if (content["content_type"], content["content_id"]) != (reward["content_type"], reward["content_id"]):
-                displayed[-1]["origin_content"] = {key: reward[key] for key in ("content_type", "content_id", "amount")}
-    return displayed
 
 
 def first_rewards(game, session):

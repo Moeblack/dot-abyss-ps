@@ -25,7 +25,7 @@ from .gameplay_library import LIBRARY_ROUTES, sync_novels
 from .gameplay_party import PARTY_ROUTES
 from .gameplay_party_state import ensure_party, validate_layout, write_layout
 from .gameplay_party_edit import PARTY_EDIT_ROUTES
-from .gameplay_idle import IDLE_ROUTES, world as prepare_idle_world, initialize_assignment, reconcile
+from .gameplay_idle import IDLE_ROUTES, world as prepare_idle_world, initialize_assignment, reconcile, replay_response as replay_idle_response
 from .gameplay_effects import settle_before_effect_change
 from .gameplay_skin_bonds import reconcile_skin_bonds
 from .gameplay_tavern import TAVERN_ROUTES
@@ -258,6 +258,7 @@ class Gameplay:
         digest = operation_digest(route, method, body)
         previous = replay(self.progress, operation_id, digest)
         if previous is not None:
+            previous = replay_idle_response(self, route, previous)
             previous = refresh_replay_records(self.state, previous)
             merge_changes(previous.setdefault("records", {}), delta(before, self.state["records"]))
             previous = replay_battle_response(self, route, previous)
