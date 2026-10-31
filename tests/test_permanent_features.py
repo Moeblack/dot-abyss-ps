@@ -55,7 +55,7 @@ def test_favorite_and_skin_selection_require_owned_compatible_content(setup_game
     call(c, "api/character/skin/set", {"t_character_id": 1, "m_character_skin_id": 120000201}, expected=409)
     call(c, "api/character/weapon_skin/set", {"t_character_id": 1, "m_weapon_skin_id": 100016001}, expected=409)
     assert snapshot(c) == before
-    call(c, "api/character/favorites/reset", {"t_character_ids": [1]})
+    call(c, "api/character/favorites/reset", {"t_character_ids": []})
     call(c, "api/character/skin/set", {"t_character_id": 1, "m_character_skin_id": 120001601})
     assert records(c)["t_characters"]["up"][0]["is_favorite"] == 0
 

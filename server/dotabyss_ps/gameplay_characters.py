@@ -17,9 +17,9 @@ def favorite(game, body):
 
 
 def favorites_reset(game, body):
-    selected = [owned(game, "t_characters", value) for value in identifiers(body["t_character_ids"], 1000)]
-    for character in selected:
-        character["is_favorite"] = 0
+    selected = {owned(game, "t_characters", value)["id"] for value in identifiers(body["t_character_ids"], 1000)}
+    for character in rows(game.state, "t_characters"):
+        character["is_favorite"] = int(character["id"] in selected)
     return {}
 
 
