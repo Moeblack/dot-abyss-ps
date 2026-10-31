@@ -11,7 +11,7 @@ from urllib.parse import quote, urlsplit
 
 from dotabyss_ps.process_lock import ProcessLockBusy, exclusive_process_lock
 from .client import ConsoleError, read_token
-from .service_bootstrap import canonical_origin, compatible_client, health
+from .service_bootstrap import ServiceMismatch, ServiceUnavailable, canonical_origin, compatible_client, health
 
 
 def child_options(root):
@@ -35,14 +35,62 @@ class ServiceManager:
         self.last_error = ""
         self.stop_requested = False
         self._operation = threading.Lock()
+        self._status_lock = threading.Lock()
+        self._cached_status = None
+        self._status_stamp = None
+        self._status_at = 0
+        self._checked_key = None
+        self._checked_at = 0
+        self._checked_client = None
+        self._last_ready = None
+        self._probe_failures = 0
 
     def status(self):
+        if self.phase:
+            return self._status()
+        with self._status_lock:
+            process = self.process
+            stamp = (id(process), process.poll() if process else None, self.instance, self.phase, self.stop_requested)
+            now = time.monotonic()
+            if self._cached_status is not None and stamp == self._status_stamp and now - self._status_at < 0.5:
+                return dict(self._cached_status)
+            result = self._status()
+            self._cached_status, self._status_stamp, self._status_at = dict(result), stamp, time.monotonic()
+            return result
+
+    def _verify_compatibility(self, current):
+        try:
+            token = (self.data_dir / "admin-token.txt").stat()
+            token_stamp = token.st_mtime_ns, token.st_size
+        except OSError:
+            token_stamp = None
+        key = current.get("instance"), current.get("version"), token_stamp
+        if key != self._checked_key or self._checked_client is None or time.monotonic() - self._checked_at >= 30:
+            self._checked_client = compatible_client(self.origin, self.data_dir)
+            self._checked_key, self._checked_at = key, time.monotonic()
+        return self._checked_client
+
+    def _unavailable(self, result, message, live):
+        self._probe_failures += 1
+        previous = self._last_ready
+        same_process = self.process is None or (live and previous is not None
+                       and previous["pid"] == self.process.pid and previous["instance"] == self.instance)
+        if previous is not None and same_process:
+            result.update({key: previous[key] for key in ("managed", "pid", "instance")})
+            result.update(state="recovering" if self._probe_failures < 3 else "unresponsive", preserve_console=True)
+        else:
+            result.update(state="error")
+        result.update(ready=False, can_start=False, can_stop=live, can_restart=live, message=message)
+        return result
+
+    def _status(self):
         process = self.process
         live = process is not None and process.poll() is None
         result = {"state": "stopped", "ready": False, "managed": live, "can_start": not live,
                   "can_stop": live, "can_restart": live, "origin": self.origin, "data_dir": str(self.data_dir),
                   "pid": process.pid if live else None, "log_path": str(self.log_path) if self.log_path else None,
-                  "message": "服务已停止，点击启动服务后进入工作台。", "instance": self.instance if live else None}
+                  "message": "服务已停止，点击启动服务后进入工作台。", "instance": self.instance if live else None,
+                  "preserve_console": False}
         if self.phase or live and self.stop_requested:
             result.update(state=self.phase or "stopping", can_start=False, can_stop=False, can_restart=False,
                           message="正在启动服务…" if self.phase == "starting" else self.last_error or "正在结束请求并停止服务…")
@@ -50,22 +98,34 @@ class ServiceManager:
         try:
             current = health(self.origin)
             if current is not None:
-                compatible_client(self.origin, self.data_dir)
+                self._verify_compatibility(current)
                 owned = live and current.get("instance") == self.instance
                 result.update(state="running" if owned else "external", ready=True,
                               managed=bool(owned), can_start=False, can_stop=bool(owned), can_restart=bool(owned),
                               pid=process.pid if owned else None, instance=current.get("instance") or "external",
                               message="服务运行中，工作台与游戏可以连接。" if owned else
                               "服务从其他窗口启动。请先在原 PowerShell 窗口按 Ctrl+C，再从这里启动，即可管理启停。")
+                self._last_ready, self._probe_failures = dict(result), 0
                 return result
-        except ConsoleError as error:
+        except ServiceUnavailable as error:
+            return self._unavailable(result, str(error), live)
+        except ServiceMismatch as error:
+            self._last_ready, self._checked_key = None, None
             result.update(state="conflict", can_start=False, can_restart=False, message=str(error))
             return result
+        except ConsoleError as error:
+            self._last_ready, self._checked_key = None, None
+            result.update(state="error", can_start=False, can_restart=False, message=str(error))
+            return result
         if live:
+            if self._last_ready is not None:
+                return self._unavailable(result, "服务进程仍在运行，正在等待连接恢复。", live)
             result.update(state="error", can_restart=False, message=self.last_error or "服务进程仍在运行，但尚未就绪。请查看日志。")
         elif not (self.stop_requested and process is not None and process.returncode == 0) and (
                 self.last_error or process is not None and process.returncode not in (None, 0)):
             result.update(state="error", message=self.last_error or f"服务意外退出（{process.returncode}），请查看日志。")
+        if not live:
+            self._last_ready, self._checked_key = None, None
         return result
 
     def _validate(self):
@@ -102,12 +162,20 @@ class ServiceManager:
                 while time.monotonic() < deadline:
                     if self.process.poll() is not None:
                         raise ConsoleError("服务启动失败，请查看下方日志。", 503)
-                    current = health(self.origin)
+                    try:
+                        current = health(self.origin)
+                    except ServiceUnavailable:
+                        time.sleep(0.15)
+                        continue
                     if current is not None:
                         if current.get("instance") != self.instance:
                             self._signal_stop()
                             raise ConsoleError("端口已被另一个服务占用，本次服务已请求退出。", 409)
-                        compatible_client(self.origin, self.data_dir)
+                        try:
+                            self._verify_compatibility(current)
+                        except ServiceUnavailable:
+                            time.sleep(0.15)
+                            continue
                         return None
                     time.sleep(0.15)
                 raise ConsoleError("等待服务就绪超时，请查看日志；可以停止此进程后重试。", 504)
@@ -193,7 +261,7 @@ class ServiceManager:
     def console_ticket(self):
         if not self.status()["ready"]:
             raise ConsoleError("请先启动服务。", 409)
-        result = compatible_client(self.origin, self.data_dir).post("/admin/ui-ticket", {})
+        result = self._checked_client.post("/admin/ui-ticket", {})
         ticket = result.get("ticket")
         if not isinstance(ticket, str) or not 16 <= len(ticket) <= 128:
             raise ConsoleError("服务没有返回有效的工作台票据。", 503)

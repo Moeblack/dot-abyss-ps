@@ -159,3 +159,108 @@ test("a ticket requested before stop cannot reopen the old console", async () =>
   assert.equal(host.state.status.state, "stopped");
   assert.equal(host.state.frameUrl, "");
 });
+
+test("temporary backend states retain the verified console without requesting another ticket", async () => {
+  let current = running;
+  let tickets = 0;
+  const host = coordinator({ request: async (path) => {
+    if (path === "/host/status") return current;
+    if (path === "/host/console-ticket") { tickets++; return ticket; }
+    throw new Error(path);
+  } });
+  await host.boot();
+  for (const state of ["recovering", "unresponsive", "recovering"]) {
+    current = { ...running, state, ready: false, preserve_console: true };
+    await host.refresh();
+    assert.equal(host.state.frameUrl, ticket.url);
+    assert.equal(host.state.frameInstance, running.instance);
+    assert.equal(policy(host.state.status).tone, "warning");
+  }
+  current = running;
+  await host.refresh();
+  assert.equal(host.state.frameUrl, ticket.url);
+  assert.equal(tickets, 1);
+});
+
+for (const status of [undefined, 408, 429, 500, 503]) {
+  test(`temporary polling failure ${status ?? "network"} preserves the current frame`, async () => {
+    let failure = false;
+    let tickets = 0;
+    const host = coordinator({ request: async (path) => {
+      if (path === "/host/status") {
+        if (failure) throw Object.assign(new Error("temporary polling failure"), { status });
+        return running;
+      }
+      if (path === "/host/console-ticket") { tickets++; return ticket; }
+      throw new Error(path);
+    } });
+    await host.boot();
+    failure = true;
+    for (let count = 0; count < 2; count++) {
+      await host.refresh();
+      assert.equal(host.state.status.state, "recovering");
+      assert.equal(host.state.frameUrl, ticket.url);
+      assert.match(host.state.error, /temporary polling/);
+    }
+    failure = false;
+    await host.refresh();
+    assert.equal(host.state.status.state, "running");
+    assert.equal(host.state.error, "");
+    assert.equal(tickets, 1);
+  });
+}
+
+for (const status of [400, 401, 403, 404]) {
+  test(`configuration or authentication polling failure ${status} clears the console`, async () => {
+    let fail = false;
+    const host = coordinator({ request: async (path) => {
+      if (path === "/host/status") {
+        if (fail) throw Object.assign(new Error("invalid configuration or session"), { status });
+        return running;
+      }
+      return ticket;
+    } });
+    await host.boot();
+    fail = true;
+    await host.refresh();
+    assert.equal(host.state.frameUrl, "");
+    assert.equal(host.state.status, null);
+  });
+}
+
+test("preservation never overrides confirmed stop, conflict, error, or instance changes", async () => {
+  let current = running;
+  let tickets = 0;
+  const host = coordinator({ request: async (path) => {
+    if (path === "/host/status") return current;
+    if (path === "/host/console-ticket") return { url: ticket.url + ++tickets };
+    throw new Error(path);
+  } });
+  await host.boot();
+  for (const state of ["stopped", "conflict", "error"]) {
+    current = { ...running, state, ready: false, preserve_console: true };
+    await host.refresh();
+    assert.equal(host.state.frameUrl, "");
+    current = running;
+    await host.refresh();
+    assert.equal(host.state.frameInstance, running.instance);
+  }
+  const previous = host.state.frameUrl;
+  current = { ...running, state: "recovering", ready: false, preserve_console: true, instance: "new-instance" };
+  await host.refresh();
+  assert.equal(host.state.frameUrl, "");
+  current = { ...running, instance: "new-instance" };
+  await host.refresh();
+  assert.notEqual(host.state.frameUrl, previous);
+  assert.equal(host.state.frameInstance, "new-instance");
+});
+
+test("invalid backend status is a configuration error, not a retryable connection failure", async () => {
+  let current = running;
+  const host = coordinator({ request: async (path) => path === "/host/status" ? current : ticket });
+  await host.boot();
+  current = { ...running, state: "unknown-state" };
+  await host.refresh();
+  assert.equal(host.state.frameUrl, "");
+  assert.equal(host.state.status, null);
+});

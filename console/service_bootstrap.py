@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import http.client
 import os
 import socket
 import subprocess
@@ -14,6 +15,14 @@ from urllib.request import ProxyHandler, Request, build_opener
 from dotabyss_ps.process_lock import ProcessLockBusy, exclusive_process_lock
 
 from .client import AdminClient, ConsoleError, NoRedirect, read_token, service_origin
+
+
+class ServiceUnavailable(ConsoleError):
+    pass
+
+
+class ServiceMismatch(ConsoleError):
+    pass
 
 
 def canonical_origin(value):
@@ -42,44 +51,50 @@ def health(origin):
         with opener.open(Request(origin + "/healthz", headers={"Accept": "application/json"}), timeout=2) as response:
             raw = response.read(65537)
             if len(raw) > 65536:
-                raise ConsoleError("该端口返回了异常内容，请检查服务地址。")
+                raise ServiceMismatch("该端口返回了异常内容，请检查服务地址。", 409)
             result = json.loads(raw)
             if isinstance(result, dict) and response.headers.get("X-DotAbyss-Service-Instance"):
                 result["instance"] = response.headers["X-DotAbyss-Service-Instance"]
     except HTTPError as error:
-        raise ConsoleError("该端口已有服务，但没有正确响应游戏服务检查。", error.code) from error
+        if error.code >= 500 or error.code in (408, 429):
+            raise ServiceUnavailable("本地服务暂未响应健康检查，正在重试。", error.code) from error
+        raise ServiceMismatch("该端口已有服务，但没有正确响应游戏服务检查。", error.code) from error
     except URLError as error:
         reason = error.reason
         if isinstance(reason, ConnectionRefusedError) or getattr(reason, "winerror", None) == 10061 or getattr(reason, "errno", None) in (61, 111, 10061):
             return None
         if isinstance(reason, (TimeoutError, socket.timeout)) and port_is_available(origin):
             return None
-        raise ConsoleError("本地服务没有及时响应，请检查现有服务窗口；启动器不会另外启动冲突进程。") from error
+        raise ServiceUnavailable("本地服务没有及时响应，正在重试。", 503) from error
     except (TimeoutError, socket.timeout) as error:
         if port_is_available(origin):
             return None
-        raise ConsoleError("本地服务响应超时，请检查现有服务窗口。") from error
+        raise ServiceUnavailable("本地服务响应超时，正在重试。", 504) from error
+    except (http.client.HTTPException, OSError) as error:
+        raise ServiceUnavailable("本地服务连接暂时中断，正在重试。", 503) from error
     except (ValueError, UnicodeError) as error:
-        raise ConsoleError("该端口运行的不是兼容游戏服务。") from error
+        raise ServiceMismatch("该端口运行的不是兼容游戏服务。", 409) from error
     if not isinstance(result, dict) or result.get("service") != "dotabyss-local" or result.get("status") != "ok":
-        raise ConsoleError("该端口运行的不是兼容游戏服务。")
+        raise ServiceMismatch("该端口运行的不是兼容游戏服务。", 409)
     return result
 
 
 def compatible_client(origin, data_dir):
     client = AdminClient(origin, read_token(data_dir), timeout=4)
-    status = client.get("/admin/status")
-    capabilities = status.get("capabilities") if isinstance(status, dict) else None
-    if not isinstance(capabilities, dict) or capabilities.get("launcher") is not True:
-        raise ConsoleError("现有服务还没有启动器接口。请在原服务窗口重启一次，再打开启动器。", 409)
     try:
+        status = client.get("/admin/status")
+        capabilities = status.get("capabilities") if isinstance(status, dict) else None
+        if not isinstance(capabilities, dict) or capabilities.get("launcher") is not True:
+            raise ConsoleError("现有服务还没有启动器接口。请在原服务窗口重启一次，再打开启动器。", 409)
         result = client.get("/admin/launcher/status")
     except ConsoleError as error:
         if error.status == 404:
             raise ConsoleError("现有服务还没有启动器接口。请在原服务窗口重启一次，再打开启动器。", 409) from error
+        if error.status in (0, 408, 429) or error.status >= 500:
+            raise ServiceUnavailable("本地服务管理接口暂未响应，正在重试。", 503) from error
         raise
     if not isinstance(result, dict) or "running" not in result or "available" not in result:
-        raise ConsoleError("现有服务版本不兼容，请重启更新后的本地服务。")
+        raise ConsoleError("现有服务版本不兼容，请重启更新后的本地服务。", 409)
     return client
 
 

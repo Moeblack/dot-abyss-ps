@@ -161,7 +161,7 @@ def test_stop_after_child_exit_releases_old_control_pipe(context):
 
 def test_wrong_port_or_credentials_never_launch_another_process(context, monkeypatch):
     def conflict(_):
-        raise ConsoleError("wrong service", 409)
+        raise module.ServiceMismatch("wrong service", 409)
     monkeypatch.setattr(module, "health", conflict)
     assert context.manager.status()["state"] == "conflict"
     with pytest.raises(ConsoleError, match="wrong service"):

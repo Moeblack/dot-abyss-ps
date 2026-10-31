@@ -26,8 +26,12 @@
         credentials: "same-origin", redirect: "error", signal: abort.signal,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      const result = await response.json().catch(() => { throw new Error("启动器返回格式无效，请重新打开启动器。"); });
-      if (!response.ok) throw new Error(result.error?.message || result.detail || result.message || `请求失败（${response.status}）`);
+      const result = await response.json().catch(() => {
+        throw Object.assign(new Error("启动器返回格式无效，请重新打开启动器。"), { status: response.status });
+      });
+      if (!response.ok)
+        throw Object.assign(new Error(result?.error?.message || result?.detail || result?.message || `请求失败（${response.status}）`),
+          { status: response.status });
       return result;
     } catch (failure) {
       if (failure.name === "AbortError") throw new Error("连接超时。请刷新状态，或查看服务日志。");
@@ -54,6 +58,7 @@
     const display = policy(state.status, state.busy);
     const status = state.status || {};
     $("state-label").textContent = display.label;
+    $("state-label").title = status.message || "";
     $("state-dot").className = `status-dot ${display.tone}`;
     $("process-id").textContent = status.pid ? `PID ${status.pid}` : "";
     $("start-service").disabled = !display.start;

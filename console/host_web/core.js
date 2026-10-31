@@ -12,6 +12,8 @@
     error: "服务需要处理",
     external: "已连接外部服务",
     conflict: "端口被占用",
+    recovering: "正在重试连接",
+    unresponsive: "服务暂未响应",
   };
 
   function policy(status, busy) {
@@ -21,7 +23,7 @@
       label: labels[status?.state] || "正在连接启动器",
       tone: ["error", "conflict"].includes(status?.state)
         ? "error"
-        : external ? "warning" : status?.ready ? "good" : "muted",
+        : external || ["recovering", "unresponsive"].includes(status?.state) ? "warning" : status?.ready ? "good" : "muted",
       start: !!status?.can_start && !status.ready && !busy && !transitional,
       stop: !!status?.can_stop && !!status.managed && !external && !busy && !transitional,
       restart: !!status?.can_restart && !!status.managed && !external && !busy && !transitional,
@@ -76,8 +78,12 @@
     }
     async function acceptStatus(status, current) {
       if (current !== generation) return;
-      if (!status || !Object.hasOwn(labels, status.state)) throw new Error("服务状态格式无效。");
-      if (!status.ready || state.frameInstance !== status.instance) clearFrame();
+      if (!status || !Object.hasOwn(labels, status.state))
+        throw Object.assign(new Error("服务状态格式无效。"), { status: 400 });
+      const sameInstance = state.frameInstance != null && state.frameInstance === status.instance;
+      const preserve = sameInstance && status.preserve_console === true &&
+        ["recovering", "unresponsive"].includes(status.state);
+      if ((!status.ready && !preserve) || !sameInstance) clearFrame();
       state.status = status;
       state.error = "";
       emit();
@@ -92,9 +98,16 @@
         await acceptStatus(await request("/host/status"), current);
       } catch (failure) {
         if (current === generation) {
-          state.status = null;
           state.error = failure.message || String(failure);
-          clearFrame();
+          const code = failure.status;
+          const temporary = code == null || code === 0 || code === 408 || code === 429 || code >= 500;
+          if (temporary && state.frameUrl && state.frameInstance != null && state.status?.instance === state.frameInstance) {
+            state.status = { ...state.status, state: "recovering", ready: false, can_start: false,
+              preserve_console: true, message: state.error };
+          } else {
+            state.status = null;
+            clearFrame();
+          }
         }
       } finally {
         if (current === generation) {
