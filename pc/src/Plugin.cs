@@ -90,6 +90,7 @@ public sealed class Plugin : BasePlugin
         LoginPatches.Install(Add);
         PaymentPatches.Install(Add);
         CharacterLevelPatches.Install(Add);
+        IdleExplorationLifecyclePatches.Install(Add);
         AdminSyncNativeState.Install(Add);
     }
 
