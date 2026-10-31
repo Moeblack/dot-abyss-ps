@@ -1,50 +1,45 @@
-# 本地主数据接入
+# 主数据接入与版本更新
 
-当前使用 `Luo-Lio/dotabyss` 的 20261012 发布缓存作为输入，保持原始 MessagePack 字节不变。来源标记为 Windows 缓存，读取兼容性依据当前 FANZA 修改版 `1.14.4` 的原生 formatter，而不是平台名称相近的推断。
+[文档目录](README.md) · [资源索引](assets.md)
 
-## 校验结果
+当前 PC 1.15.0 使用客户端 `DownloadCache` 中的主数据，保留原始 MessagePack 字节。首次部署优先使用 [PC 首次启动](first-start.md) 中的初始化脚本，自动寻找匹配缓存、检查 schema 并完成导入。下列命令用于开发和维护，不需要在普通首装时重复执行。
 
-- 11,967,959 字节，406 张表、209,422 行。
-- SHA-256：`e980d2f6a6dfd9de9c20891c1ca7001be62de99d59e29291b0f90e2154fed0e5`。
-- 客户端要求的 364 张表全部存在，已有字段类型和整数范围通过校验。
-- `MFirstDownloadFormatter` 的未知键分支调用 `MessagePackReader.Skip`，因此额外 42 表原样保留。
-- `m_event_bonus_quest_chapters` 的 42 行缺少末尾 `m_side_story_stage_id`；原生 formatter 只读取实际数组长度，未出现的末列保留 Int64 默认值 0。校验策略附有这个方法的 token、RVA 和客户端 metadata 哈希，没有改写原始数据。
-- `m_encounter_quest_view_drops` 有 36 行重复 ID。没有证据表明这个视图的 ID 必须唯一，因此只报告，不擅自删除。只有附有独立依据的唯一键约束才作为拒绝条件。
+## 客户端与结构绑定
 
-Google Play `1.15.0` 需要另外三张表，并有两张表的字段类型/顺序变化，现有数据不满足其契约。不能用同一版本字符串把它声明为兼容。
+主数据同时绑定包名、版本、metadata SHA-256 和 schema SHA-256。PC 的结构描述为 [master-schema-pc-1.15.0.json](../artifacts/master-schema-pc-1.15.0.json)。仓库保留的 Play、FANZA schema 用于各自客户端的协议兼容，不能因版本号相同就互换数据。
 
-## 导出与检查
+检查包括表名、列顺序、字段类型、整数范围和有证据支持的唯一键。额外表只有在 schema 明确允许原生 `Skip` 行为时保留；短行只有在明确记录末列默认规则时接受。视图中没有唯一性依据的重复 ID 会报告，不擅自删除。
 
-在项目根目录执行：
+`format_validated=true` 表示通过结构检查；`business_validated=false` 不表示数据一定不可用，也不能据此宣称所有玩法已验收。实际玩法兼容需要结合接口、客户端和资源验证。
 
-```powershell
-.\.venv\Scripts\python.exe -m tools.export_master_schema --unpacked ..\dotabyss_unpacked --output artifacts\master-schema.json
-.\.venv\Scripts\python.exe -m dotabyss_ps.masterdata inspect --payload data\master\first-download.msgpack --schema artifacts\master-schema-fanza-1.14.4.json
-```
+## 检查、暂存与激活
 
-自动导出的 schema 默认严格匹配。经过原生反汇编确认的未知表跳过和末列默认策略，保存在 `master-schema-fanza-1.14.4.json`，只针对该文件记录的客户端 metadata。不要将其复制到不同版本而不重新核对。
-
-## 暂存、激活与回滚
+在项目根目录执行，替换实际主数据路径：
 
 ```powershell
-.\.venv\Scripts\python.exe -m dotabyss_ps.masterdata stage --payload data\master\first-download.msgpack --schema artifacts\master-schema-fanza-1.14.4.json --source 'GitHub release 20261012 master cache'
-.\.venv\Scripts\python.exe -m dotabyss_ps.masterdata activate local-e980d2f6a6dfd9de-75bb0baadba0
+.\.venv\Scripts\python.exe -m dotabyss_ps.masterdata inspect --payload '<主数据.dat>' --schema .\artifacts\master-schema-pc-1.15.0.json
+.\.venv\Scripts\python.exe -m dotabyss_ps.masterdata --data-dir .\data-pc-1.15.0 stage --payload '<主数据.dat>' --schema .\artifacts\master-schema-pc-1.15.0.json --source 'PC 1.15.0 本地缓存'
+.\.venv\Scripts\python.exe -m dotabyss_ps.masterdata --data-dir .\data-pc-1.15.0 activate '<stage 返回的 revision>'
 ```
 
-`stage` 只在全部校验通过后保存不可变 blob 和来源记录，不改变活动版本。`activate` 再次验证 blob，并在一个 SQLite 事务中更新活动数据集和 `resource_version`。已有用户和会话保留；失败或客户端版本不符时不切换。
+`stage` 校验并保存不可变 blob 与来源记录，不切换活动版本。revision 由 payload 与 schema 的 SHA-256 派生，格式为 `local-...`，每次使用当次返回值，不照抄旧文档中的版本号。
 
-本地版本由 payload 与 schema 的 SHA-256 派生，明确带 `local-` 前缀。回滚使用同一 `activate` 命令选择以前暂存的版本，不删除旧数据。激活后 `/local/runtime` 不能将 `resource_version` 改成与数据集不一致的任意值；客户端登记和数据集切换在事务内合并，避免并发丢字段。
+`activate` 复验 blob，在 SQLite 事务中更新活动数据集与 `resource_version`。文件保存在数据目录的 `master/blobs/<sha256>.msgpack`，元信息位于 `master_datasets`。运行版本必须与活动数据集一致，不能通过 `/local/runtime` 任意改写。
 
-文件存放在 `data/master/blobs/<sha256>.msgpack`，元数据存入现有 SQLite 的新增 `master_datasets` 表。`business_validated=false` 表示尚未完成游戏业务验证，不能因格式校验通过就把主页或战斗标为可用。
+## 更新与回退
 
-## HTTP 与原生请求
+激活主数据本身不迁移已有存档，也不替换资源。更新前备份，并核对目标 schema、玩法字段、资源 manifest 与存档迁移需求。`setup-pc.ps1` 遇到已有其他主数据版本会拒绝覆盖；独立验证新版本应使用另一个数据目录和端口。
 
-- `/local/master` 返回活动数据集的元信息。
-- `/local/master/<revision>/first.msgpack` 是诊断读取路径。
-- `/data/<revision>` 与客户端原生首下路径对应，返回完全相同的 MessagePack 字节及 SHA-256 ETag。
+回退可激活已暂存的旧 revision，但还必须恢复匹配的资源与存档。保留旧 blob 不代表新存档可以直接交给旧服务端。存档兼容规则见[新档与旧档兼容](newgame-policy.md)，资源绑定规则见[资源说明](assets.md)。
 
-服务器先读取并校验一份字节快照，再把同一快照作为响应体发送。即使文件在此后被修改，也不会出现“旧 ETag 对应新字节”的情况。未知版本、损坏或截断的 blob 明确失败；合法条件请求可以返回 304。
+导出新版本 schema 需要该客户端的模型声明和原生 formatter 依据。[export_master_schema.py](../tools/export_master_schema.py) 面向携带特定 interop 布局的 Android 解包目录，不能直接用于 PC 安装目录；不要把它当作通用的 PC 更新命令。
 
-原生路径由 `RuntimeConfig.GetMasterUrl() + masterVersion` 拼接；`SecureLinkUtil` 会重建 HTTPS URI 并丢掉自定义端口。现有本地适配器在 `UnityWebRequest.SendWebRequest` 处统一保留路径并改到本地 origin，恢复正确的本地协议与端口。官方链接的签名查询只在本地被忽略，不转发到官方服务器。
+## HTTP 与缓存
 
-原生磁盘缓存名为 `SHA256(UTF8(environment + '_' + revision))` 的前 16 字节十六进制加 `.dat`。因此只复制旧缓存文件名不能代替真正的下载与内存加载流程；当前通过 HTTP 提供数据，后续仍需验证原生 `DownloadFirstAsync` 将表加载进 `MasterDataStore`。
+- `/local/master` 返回活动主数据的元信息。
+- `/local/master/<revision>/first.msgpack` 用于诊断读取。
+- `/data/<revision>` 对应原生主数据下载路径。
+
+服务端先读取并校验完整字节快照，再从同一快照生成正文和 SHA-256 ETag。未知 revision、损坏或截断文件明确失败，合法条件请求可返回 304。活动复刻等派生视图使用独立版本，原始 blob 保持不变。
+
+本地适配插件保留原生请求路径，并改写到本机 origin 与端口。原生磁盘缓存名由环境和 revision 计算，因此只复制旧 `.dat` 文件名不能替代主数据导入或版本切换。

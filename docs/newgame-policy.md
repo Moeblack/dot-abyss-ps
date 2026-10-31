@@ -1,68 +1,93 @@
-# Local new-game policy
+# 新档、教程与旧档迁移
 
-This service creates a persistent local starting profile for three verified clients. It does not reproduce an official account or claim that these values are the official new-player defaults. They use local policy version 5, with an exact package, version and metadata SHA-256 allowlist:
+新建存档使用本地初始化规则，保存到当前数据目录的 SQLite 数据库。PC 新档从序章教程开始；已有存档保留进度，不会因重启或升级代码重新开档。首次环境配置见 [PC 首次启动](first-start.md)，日常规则见 [养成、奖励与解锁](progression-and-rewards.md)。
 
-| Package | Version | Metadata SHA-256 |
-|---|---|---|
-| `jp.co.fanzagames.dotabyss_x_a.mod` | `1.14.4` | `e144b637ceaabbcb385555d11213ba46b30216ff8df76d3d8fa8854d1582f130` |
-| `com.exnoa.abyss` | `1.15.0` | `2bbdadf0952016d5e21a34e2699de54bc97eacb9c8f85b4650e93e80c3cb0e7c` |
-| `dotabyss_x_cl` | `1.15.0` | `d38f026a769e522b136830785ad2789f834c47127be764f89ab294b4d91f056d` |
+## 客户端与版本绑定
 
-The Play client uses `artifacts/master-schema-play-1.15.0.json`, exported from its own native metadata and type registration; PC uses `artifacts/master-schema-pc-1.15.0.json`. The [native contract comparison](../artifacts/server-play-contract-comparison.json) covers 105 selected response models, all 99 record containers and rows, and all twelve initialization master tables; their field names, order, types and inheritance match. This permits reuse of the initializer and response views. It does not make the complete master datasets interchangeable: each service instance requires its selected schema's exact client identity and schema hash, and saves remain pinned to a master revision. Use a separate data directory and port for each client. Older policy-1 and policy-2 saves require explicit policy migration; they are not upgraded by read requests.
+当前完整玩法面向 `dotabyss_x_cl` PC 1.15.0。初始化器还保留 `com.exnoa.abyss` 1.15.0 和 `jp.co.fanzagames.dotabyss_x_a.mod` 1.14.4 的基础协议兼容；这不表示 Android 已具备相同的完整玩法和启动流程。
 
-`build_initial_state` reads only the twelve required master tables. It resolves columns by the verified schema, rejects duplicate master keys and unsupported seed options, and checks the native integer widths. Initial contents are ordered by their master row ID; owned row IDs are positive sequential numbers within each profile and record collection. They are separate from master IDs.
+每个支持项同时绑定包名、版本和元数据 SHA-256，具体值由 [newgame.py](../server/dotabyss_ps/newgame.py) 的 `SUPPORTED_CLIENTS` 定义。主数据、结构描述和存档必须匹配同一客户端与主数据版本，不能互换 PC、Google Play 和 FANZA 数据。不同客户端应使用独立的数据目录和服务端口。
 
-| Record | Local starting policy |
-|---|---|
-| Characters | Initial-content type 40, one copy per row, at the minimum positive master level with no entry cost; zero experience and progression. Only `intimacy_point` is accepted in seed options. |
-| Character skins | Each starter receives its unique default Normal (1) and TavernWork (2) skins. |
-| Weapon skins | Each starter uses the unique free default skin for its weapon type, with `m_character_id = 0`. Shared defaults are granted once. |
-| Mana gems | Initial-content type 60; each ID must exist in `m_mana_gems`. |
-| Degrees | Initial-content type 190; each ID must exist in `m_degrees`. |
-| Plans | Initial-content type 131, with `step = 0` completed steps. The first pending master step is 1; receiving it advances the stored value to 1. Plan rows have no `user_id` field in this client DTO. |
-| Buildings | The local policy explicitly creates master IDs 100, 200, 300, 500 and 1000 at their lowest positive master level and its experience threshold. |
-| Status and profile | Lowest positive master user rank and its experience threshold; first owned character is the favorite; first owned degree is selected. All currencies and character experience start at zero. Equipment capacity is 100 and maximum party count is 1. These capacities are local policy choices. |
-| Prologue tutorial | New PC profiles start at `None` (0) and follow the native tutorial. Other supported platforms retain `Completed` (99). Existing profiles and migration progress are preserved. |
-| Tavern daily card | One dormant owned row. Date fields, seed, ticket use, counts and score are zero; the result string and four selected/used-card arrays are empty. These are local placeholders and do not assert official date encoding, grant rewards or implement tavern work. |
-| Other records | Empty `up` and `down` arrays; no quest completions, purchased items, login rewards or paid skin grants. |
+当前存档策略为 `policy_version = 5`，数据库 `game_states.schema_version` 仍为 `1`。前者表示初始化及兼容规则，后者表示数据库记录格式，两者不能互相替代。
 
-Content type 130 is absent from both clients' independently decoded `ContentType` enums. Its five rows correlate with the building IDs, but that mapping is not treated as proven. The original rows remain in `unresolved_initial_contents` for diagnostics. Buildings are created by the separate explicit local policy above, even if type-130 rows are absent. Other unknown types, quantities other than one, duplicate seed type/ID pairs and unsupported options stop initialization rather than dropping content.
+## 新档与教程
 
-`user_contents`, `home_contents` and `login_announcement_contents` return independent copies of the same stored record snapshot. All validate the 99 record containers, populated row fields and types, owned references, profile ownership consistency, timestamps and the unresolved ledger before serializing. The storage layer additionally binds the save owner to the authenticated profile and pins the save to its master revision. A changed dataset or malformed save requires an explicit resolution; read requests must not reset progress.
+通过控制台创建 PC 存档时，基础记录、玩法进度、显示名称和创建回执在同一事务中写入。重复提交同一创建请求不会产生多份存档。
 
-`/api/user` includes `possession_limit.equipment`. `/api/home` includes empty greetings, visitors and recommendations plus zero badges; `sp_mission_reward` is an empty list. These read responses return `notifies: null` because they produce no events. A nonnull notification field can trigger native master-data lookups even when its array is empty. Diagnostics and policy metadata are excluded from these game response contents.
+新档的 `features.tutorial` 使用 `guided` 模式：
 
-Policy 2 and later require exactly one `t_prologue_tutorials` row. The native fields are `id: int64`, `user_id: int64` and `status: int32`; supported status values are 0 through 15 and 99. An empty collection crashes the native tutorial-state reader. SQLite `game_states.schema_version` remains 1 because its storage layout has not changed.
+- 序章状态从 `0` 开始，按原生流程推进至 `13`，再转为完成状态 `99`。
+- 关闭常驻功能自动解锁、探索队自动派遣和全部地图自动开放；主线编队与探索队各从一支开始。
+- 这些限制只作用于该存档的有效规则，不修改共享的 `gameplay-rules.json`。
+- 没有该标记的旧档继续使用原有规则，已经完成的教程和解锁状态不会回退。
 
-New PC profile creation adds a `features.tutorial` policy in the same transaction as the initial save. Its `guided` mode disables automatic common-feature unlocks, automatic idle assignment, and all-area idle unlocks, and starts with one party of each kind. These are effective per-profile rules; the shared configuration is not changed. Existing profiles without this marker keep their configured rules, including already completed tutorials and unlocked features.
+离开两场序章教学战斗前，必须已有对应战斗会话；原生教学战斗通过随后提交的序章状态关闭会话。教程抽卡必须确认结果后才能继续。重复提交状态不会倒退或重复发奖。状态 `14`、`15` 仅为兼容旧记录保留，不插入正常的新档流程。
 
-The verified PC transition table advances from 0 through 13, then directly to 99. Values 14 and 15 remain accepted in old saves, but are not inserted into the normal path. Leaving the exploration and disaster tutorial scenes requires the corresponding tutorial battle session to have started. The native tutorial battle services do not send battle-clear requests; their following prologue update closes the session. The gacha-play step requires a confirmed tutorial draw before advancing. Repeated updates do not rewind progress or grant rewards again.
+功能教程奖励取自 `m_tutorial_rewards`：直接奖励进入库存，间接奖励进入礼物箱；奖励回执与完成标记一起保存。旧档已经完成的功能教程不会补发同一奖励。功能入口、提示已读和教程完成是独立状态，不能只改其中一个就视为全部完成。
 
-Feature tutorial completion reads `m_tutorial_rewards`. Direct rewards use the normal inventory delivery path, while indirect rewards enter the present box. Reward receipts and tutorial flags commit together. A tutorial flag already present in an old save does not trigger a retroactive grant. Main-story feature conditions support completed quests, completed sequences, and the native count of characters at intimacy level 1 or higher.
+## 初始化基线
 
-Policy 3 also requires one `t_tavern_daily_cards` row because two Home consumers read its first entry. `id` and `user_id` are positive int64 values; numeric state fields retain their native int32 bounds, and the nested card arrays are bounded and checked against their exact field types. Existing valid rows remain unchanged. The captured official response contained `day=20261031` and `day_of_week=6`; the local dormant zero values do not claim to reproduce that calendar state. Day reset, card selection, work and rewards remain unimplemented.
+`build_initial_state` 读取经过结构校验的 12 张基础主表。持有记录的 `id` 在各存档、各记录集合中分别生成，与 `m_` 开头的主表 ID 不同。
 
-Policy 4 requires one `t_idle_exploration_statuses` row. The captured inactive PC status has level 1, zero points, a 43200-second exploration limit, state 0, null start time, no rare drop and no stacked treasure. The local initializer uses that inactive shape with its own row and owner IDs. Home reads this row in both its footer task and rare-drop indicator. The migration adds it only when absent; existing progress and start times remain unchanged. It does not start exploration, create rewards or implement exploration actions.
+| 内容 | 基础规则 |
+| --- | --- |
+| 角色 | 按 `m_initial_contents` 的类型 `40` 创建，使用最低正等级；经验、突破等进度从零开始，种子配置只接受 `intimacy_point` |
+| 角色服装 | 发放每位初始角色唯一的默认战斗服装与酒馆服装 |
+| 武器外观 | 使用武器类型对应的免费默认外观，共用外观只发一次 |
+| 魔晶石、称号 | 分别按初始内容类型 `60`、`190` 创建，引用必须存在 |
+| 开发计划 | 类型 `131`；`t_plans.step` 表示已完成步数，新档为 `0`，完成第一步后为 `1` |
+| 设施 | 按本地规则创建 `100`、`200`、`300`、`500`、`1000`，使用各自最低正等级和对应经验阈值 |
+| 玩家资料 | 使用最低正等级，第一位角色作为主页展示角色，第一枚称号作为当前称号；主页展示角色与角色收藏列表是不同设置 |
+| 容量 | 装备容量为 `100`，基础最大编队数为 `1`；编队数量还按该存档的有效规则更新 |
+| 酒馆 | 保留一条未开始的每日卡片记录，数值为零、卡片数组为空；后续由酒馆玩法维护 |
+| 探索队 | 保留一条未派遣状态，初始等级 `1`、积分 `0`、基础探索上限 `43200` 秒；后续由探索玩法维护 |
 
-Policy 5 stores `t_plans.step` as the number of completed steps. PC captures contain initial step 0, and the native research card compares this value directly with the number of master steps to display COMPLETE. The migration checks each owned plan against consecutive `once:<mission_id>` claim records, then converts the old next-step value to the completed-step value. Missing master definitions, nonconsecutive claims, mismatched old values or conflicting cached responses stop the migration. Feature tutorial flags and prologue status are preserved.
+基础函数中的货币和角色经验为零，不代表进入游戏后必定显示零。PC 创建流程还会执行玩法初始化：`starting_gold`、`starting_character_exp`、`starting_soul`、`starting_free_currency` 等本地规则决定首次补给。常规补给进入礼物箱，Soul 直接结算并记录回执。更改补给配置不会给已建立补给回执的存档重复发放。
 
-With `unlock_common_features = 1`, an unfinished Research tutorial receives a one-time local supply of basic ore (50001), bone (50004) and wood (50007). `research_tutorial_material_amount` controls the amount of each item, defaults to 100 and accepts 0 to disable the supply. The grant is recorded in `features.research.data.tutorial_supplies`; reconnecting, spending materials or changing the configured amount does not grant it again. Existing quantities are retained, overflow goes to presents, and normal research costs still apply. The supply is included in the next user, login or home response and does not mark the tutorial complete.
+初始内容类型 `130` 尚未确定为原生可直接发放的内容，原行保存在 `unresolved_initial_contents` 中；设施由独立本地规则创建，不依赖猜测该类型。其他未知类型、重复种子、数量不为一或不支持的配置会中止初始化，不会悄悄丢弃。
 
-Empty party positions have no `t_exploration_party_characters` row. To preview cleanup of legacy zero-character placeholders, run `.\.venv\Scripts\python.exe -m dotabyss_ps.party_migration --data-dir .\data-pc-1.15.0 --profile pc-default`; add `--apply` to commit. The command backs up and updates the save and replay records together, preserves occupied positions and equipment, and reserves old row IDs against reuse. Empty rows that still reference equipment are rejected. Cleanup keeps the existing policy version and does not grant rewards; a missing gameplay ledger receives a closed welcome-supply ledger when ID reservations require its creation.
+## 登录与主页同步
 
-Preview the selected profile migration, then apply the same command with `--apply`:
+`user_contents`、`home_contents` 和 `login_announcement_contents` 提供基础响应结构与存档副本。PC 实际请求还会经过 `Gameplay.visit`，同步体力、有效规则、解锁条件、奖励回执等状态，因此基础函数中的空数组不能作为实时接口的固定结果。
+
+- `/api/user` 返回持有记录和容量等信息。
+- `/api/home` 填入当前角色问候、访客、推荐商品和待领奖标记。
+- `/api/mypage/login` 使用 `GET`，同时保留通用 `POST` 兼容；处理符合条件的登录奖励、订阅奖励、好友点、限时道具到期转换及商店标记。
+
+这些请求可能结算到期或每日内容，但依靠日期、业务回执和事务避免重登重复发奖。角色收藏、礼物领取、剧情完成等已保存状态不会因为读取主页而重新生成。普通业务操作另行返回记录差异和需要的原生通知。
+
+序列化前会校验记录容器、字段类型、持有关系和所有者；存储层同时核对认证档案与主数据绑定。损坏或版本不匹配的存档会报错，不能通过重新初始化覆盖进度。
+
+## 旧存档策略迁移
+
+只有遇到旧策略版本时才需要迁移；正常新建的策略 `5` 存档不需要执行。迁移前退出游戏并停止服务。`--profile` 使用存档内部标识，例如 `pc-default` 或 `local-...`，不是控制台显示名称。
+
+先预览，再以相同参数加 `--apply` 执行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m dotabyss_ps.migrations --data-dir .\data-pc-1.15.0 --profile pc-default --schema .\artifacts\master-schema-pc-1.15.0.json
-.\.venv\Scripts\python.exe -m dotabyss_ps.migrations --data-dir .\data-pc-1.15.0 --profile pc-default --schema .\artifacts\master-schema-pc-1.15.0.json --apply
+.\.venv\Scripts\python.exe -m dotabyss_ps.migrations --data-dir .\data-pc-1.15.0 --profile '<内部存档标识>' --schema .\artifacts\master-schema-pc-1.15.0.json
+.\.venv\Scripts\python.exe -m dotabyss_ps.migrations --data-dir .\data-pc-1.15.0 --profile '<内部存档标识>' --schema .\artifacts\master-schema-pc-1.15.0.json --apply
 ```
 
-The command verifies profile ownership, the active master revision and its supported client identity. It defaults to policy 5 and lists the registered steps in its preview. Crossing into policy 5 requires `--schema`; its hash, client identity and the immutable master payload must match the active dataset. Step 1→2 fills a missing prologue row with status 99; step 2→3 fills a missing dormant tavern row; step 3→4 fills a missing inactive exploration status; step 4→5 corrects completed plan steps and cached response copies. Existing valid progress is preserved. `--to-policy 2`, `--to-policy 3` and `--to-policy 4` retain the earlier migration targets without requiring a schema, while downgrades and unregistered targets are rejected. A chained upgrade runs in one transaction without committing an intermediate state.
+| 迁移 | 处理内容 |
+| --- | --- |
+| `1 → 2` | 缺少序章记录时补入完成状态 `99`，保留有效的原进度 |
+| `2 → 3` | 仅在缺失时补入未开始的酒馆记录 |
+| `3 → 4` | 仅在缺失时补入未派遣的探索队记录 |
+| `4 → 5` | 根据连续的计划奖励回执，将旧的“下一步”改为“已完成步数”，同时修正缓存响应中的对应记录 |
 
-Before committing, the command writes and flushes a JSON backup in the data directory's `migration-backups` folder. Its filename includes the original/target policies, profile and original content hash. The backup retains the original `game_states` row and original/result content hashes. A migration into policy 5 also includes the original `gameplay_progress` row and its hashes; its filename includes both original content hashes. Plan record copies in operation and payment replay responses are converted without deleting their identifiers or reward receipts. Both database rows commit in one transaction; a failed update rolls both back and leaves the backup intact. Repeated application to the requested policy does nothing, and a conflicting backup is never overwritten. Unrelated profiles, identity, balances, inventory and master binding remain unchanged. Restart an already running service after deploying the new code.
+默认目标为策略 `5`。跨入策略 `5` 必须提供与激活主数据匹配的 `--schema`；主表缺失、领奖回执不连续或旧值冲突会中止迁移。`--to-policy 2`、`3`、`4` 保留较早目标，不能降级或跳到未注册的版本。
 
-The canonical login-announcement request is `GET /api/mypage/login`; the existing generic POST transport remains accepted. The [native contract](../artifacts/mypage-login-contract.json) establishes its `AppContentsEntityBase` inheritance, eight additional fields and native consumers. Matching response models were also checked against the older FANZA interop. The response includes nonnull `login_bonus_list` with empty `daily`, `special` and `special_condition` arrays; nonnull `friend_point_data` with zero `follow_count` and `get_friend_point`; empty announcement, expiry and limited-login arrays; and `has_new_shop = 0`.
+执行前会在数据目录的 `migration-backups/` 写入原始记录及内容哈希；计划迁移还包含原始 `gameplay_progress`。链式升级及两类记录的修改在同一事务中提交，失败回滚并保留备份。同一迁移重复执行不再修改存档，已有冲突备份不会被覆盖；其他档案、余额、库存和版本绑定不变。完成后重新启动服务。
 
-This is an explicit local policy with no login rewards, announcements, friend-point awards, limited-item expiry conversion or limited-login entitlements. The existing stored balances and inventory are returned unchanged. Repeated GET or POST requests do not regrant starting content or update the saved record snapshot. A first authenticated request can initialize the same local starting profile used by the user and home endpoints. Default fixture-only mode keeps its prior behavior. The response shape and empty-path consumers are verified statically; official reward logic and device execution of this local response remain unverified.
+## 旧编队空位清理
 
-For each verified dataset, this produces three characters, six character skins, three free weapon skins, three mana gems, two plans, one degree and five buildings, plus status/profile rows and five unresolved seed rows. These references and wire shapes have been checked against local metadata and master data. Successful Android rendering and gameplay still require matching assets and device verification. Play server support does not modify or connect the official Play client, and the older Android adapter is not assumed compatible with Play 1.15.0.
+空编队位置不应创建 `t_exploration_party_characters` 记录。较早存档如果留下角色 ID 为零的占位行，可以单独预览清理：
+
+```powershell
+.\.venv\Scripts\python.exe -m dotabyss_ps.party_migration --data-dir .\data-pc-1.15.0 --profile '<内部存档标识>'
+```
+
+确认预览后加 `--apply`。工具会备份并同时清理存档与缓存响应，保留有效队员、装备和已有记录 ID 的保留范围；仍引用装备的空行会被拒绝。此操作不改变策略版本，也不发放奖励。
+
+实现入口：[初始化与校验](../server/dotabyss_ps/newgame.py)、[教程规则](../server/dotabyss_ps/gameplay_tutorial.py)、[策略迁移](../server/dotabyss_ps/migrations.py)、[编队清理](../server/dotabyss_ps/party_migration.py)。返回[文档目录](README.md)。

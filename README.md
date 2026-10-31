@@ -8,19 +8,26 @@
 - 在启动器中一键安装或更新繁体翻译，查看进度与日志。
 - 按功能支持热更新；部分改动在切换页面、下场战斗或重新登录后生效。
 
-部分玩法采用可配置的本地规则，各模式仍在持续进行实机验证。（99%的内容已填充完毕）
+部分玩法采用可配置的本地规则，各模式仍在持续进行实机验证。具体范围和限制见[文档目录](docs/README.md)。
 
 ## 使用
 
-需要 Windows、Python 3.11+，以及另行准备的匹配 PC 客户端、主数据、游戏资源和插件运行环境。编译客户端插件另需 .NET SDK。
+需要 Windows、Python 3.11+、.NET SDK，以及匹配的 PC 1.15.0 客户端和已下载资源。游戏加载器使用 BepInEx 6 IL2CPP x64。
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-.\start-console.cmd
+.\setup-pc.ps1 -Source 'D:\dot\dotabyss_x_cl'
 ```
 
-环境准备完成后，点击“启动服务”，选择或创建存档，再启动游戏。首次配置见 [启动器说明](docs/launcher.md)，日常操作见 [控制台说明](console/README.md)。
+将路径替换为自己的原版游戏目录。脚本自动准备 Python 环境、本机配置、主数据和资源索引；加载器与首次 interop 生成按 [PC 首次启动](docs/first-start.md) 完成。
+
+准备完成后，双击 `start-console.cmd`，点击“启动服务”，选择或创建存档，再点击“启动游戏”。日常编辑、热更新和备份见[启动器与控制台](console/README.md)。
+
+## 文档
+
+- [首次启动与缓存位置](docs/first-start.md)
+- [养成、奖励与解锁](docs/progression-and-rewards.md)
+- [主线与教程](docs/main-story-battle.md)、[其他战斗模式](docs/other-battle-modes.md)、[活动与复刻](docs/events-and-reruns.md)
+- [数据维护及完整目录](docs/README.md)
 
 ## 运行库兼容补丁
 
@@ -31,7 +38,7 @@ python -m venv .venv
 3. 将本仓库根目录的两个 DLL **一并复制到游戏的 `BepInEx/core/`**，覆盖原文件。
 4. 重新启动游戏。需要回滚时，退出游戏，再将备份的两个 DLL 一并还原。
 
-源码、修改记录和许可证位于 [third_party/Il2CppInterop](third_party/Il2CppInterop/)，无需复制到游戏目录。补丁不修改存档，也无需重启私服服务
+源码、修改记录和许可证位于 [third_party/Il2CppInterop](third_party/Il2CppInterop/)，无需复制到游戏目录。补丁不修改存档，也无需重启私服服务。
 
 ## 中文翻译
 
@@ -43,4 +50,4 @@ python -m venv .venv
 
 ## 参与贡献
 
-欢迎大家提交 Issue 和 PR！
+欢迎大家提交 Issue 和 PR，一起完善玩法、翻译和使用体验。反馈问题请附版本、复现步骤及相关日志片段；提交时不要加入游戏文件、个人存档或管理凭据。
