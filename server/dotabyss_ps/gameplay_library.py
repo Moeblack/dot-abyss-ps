@@ -91,7 +91,11 @@ def eligible_novel(game, kind, definition):
         return bool(unlocked or configured) and available(definition, game.now, "open_at")
     if kind == 3:
         character = find(game.state, "t_characters", m_character_id=definition["m_character_id"])
-        return character is not None and definition["condition_type"] == 1 and intimacy_level(game, character) >= definition["condition_value"]
+        if character is None:
+            return False
+        record = find(game.state, "t_novel_characters", m_novel_character_id=definition["id"])
+        return (record is not None and record["status"] == 1 or definition["condition_type"] == 1
+                and intimacy_level(game, character) >= definition["condition_value"])
     if kind == 5:
         return find(game.state, "t_character_skins", m_character_skin_id=definition["m_character_skin_id"]) is not None
     if kind == 4:
@@ -113,7 +117,10 @@ def sync_novels(game):
         if master not in game.catalog.tables:
             continue
         for definition in game.catalog.rows(master):
-            if eligible_novel(game, kind, definition) and find(game.state, table, **{field: definition["id"]}) is None:
+            if not eligible_novel(game, kind, definition):
+                continue
+            record = find(game.state, table, **{field: definition["id"]})
+            if record is None or kind == 3 and record["status"] == 0:
                 unread = int(f"{kind}:{definition['id']}" not in read_receipts(game))
                 values = {"is_unread": unread, **({"status": 1} if kind == 3 else {})}
                 put(game.state, table, {field: definition["id"]}, values, None if kind == 7 else game.user_id)
@@ -129,6 +136,9 @@ def character_read(game, body):
     selected = identifiers(body["t_novel_character_ids"], 1000)
     records = {r["id"]: r for r in rows(game.state, "t_novel_characters")}
     if set(selected) - records.keys():
+        raise GameplayError("Character story is not unlocked")
+    if any(not eligible_novel(game, 3, game.catalog.get("m_novel_characters", records[identifier]["m_novel_character_id"]))
+           for identifier in selected):
         raise GameplayError("Character story is not unlocked")
     for identifier in selected:
         records[identifier]["is_unread"] = 0

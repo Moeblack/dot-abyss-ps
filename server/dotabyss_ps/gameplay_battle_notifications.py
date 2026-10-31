@@ -13,6 +13,10 @@ recollection_quest_open tryout_quest_open
 
 def battle_notifications(before, after, catalog=None):
     messages = {field: [] for field in NOTIFICATION_FIELDS}
+    old_novels = {row["m_novel_character_id"] for row in before["t_novel_characters"]["up"] if row["status"] == 1}
+    messages["novel_character_release"] = [{"m_novel_character_id": row["m_novel_character_id"]}
+                                           for row in after["t_novel_characters"]["up"]
+                                           if row["status"] == 1 and row["m_novel_character_id"] not in old_novels]
     if catalog is not None and "m_vip_ranks" in catalog.tables:
         ranks = []
         for records in (before, after):
