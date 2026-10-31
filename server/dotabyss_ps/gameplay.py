@@ -30,6 +30,7 @@ from .gameplay_effects import settle_before_effect_change
 from .gameplay_skin_bonds import reconcile_skin_bonds
 from .gameplay_tavern import TAVERN_ROUTES
 from .gameplay_statistics import initialize as initialize_statistics, record_operation
+from .gameplay_pass_statistics import prepare as prepare_pass_statistics
 from .gameplay_plans import PLAN_ROUTES, sync_plans
 from .gameplay_synchro import SYNCHRO_ROUTES, ensure_synchro
 from .gameplay_pass import PASS_ROUTES
@@ -182,6 +183,7 @@ class Gameplay:
         repair_ability_responses(self)
         ensure_research_rewards(self)
         initialize_statistics(self.state, self.progress, self.catalog)
+        prepare_pass_statistics(self)
         if "m_stamina_recovery_costs" in self.catalog.tables:
             settle_stamina(self.state, self.catalog, self.user_id, self.now)
             recovery_record(self)

@@ -235,6 +235,8 @@ def result(game, body):
         record_return(game, expedition)
     received, mailed = deliver(game, rewards)
     clear_items(game)
+    statistic(game.progress, game.now, 210001)
+    statistic(game.progress, game.now, 210001, 1, current["m_nether_id"])
     expedition["settled"] = True
     current["status"] = 8 if not lost else 7
     levels = [row for row in game.catalog.rows("m_nether_result_reward_levels") if row["m_nether_id"] == current["m_nether_id"] and row["total_score"] <= score]

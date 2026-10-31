@@ -34,6 +34,33 @@ def user_view(definition, levels, record):
             "loop_pass_point": max(0, record["points"] - cap["require_total_pass_point"] - record["loop_received"] * interval), "is_premium": record["premium"]}
 
 
+def receivable(game, evaluator=None):
+    if not game.catalog.tables.get("m_mission_passes"):
+        return False
+    for definition in game.catalog.rows("m_mission_passes"):
+        if not available(definition, game.now):
+            continue
+        if evaluator is None:
+            evaluator = missions(game)
+        if any(evaluator.receivable(mission) for mission in game.catalog.rows("m_missions")
+               if mission["m_mission_pass_id"] == definition["id"]):
+            return True
+        _, levels, record = active_pass(game, definition["id"])
+        for level in levels:
+            if level["level"] > definition["m_mission_pass_level_max"] or level["require_total_pass_point"] > record["points"]:
+                continue
+            flags = record["rewards"].get(str(level["level"]), {})
+            if not flags.get("normal", False) or record["premium"] and not flags.get("premium", False):
+                return True
+        cap = maximum(definition, levels)
+        loop = next((level for level in levels if level["level"] == cap["level"] + 1), None)
+        if loop is not None:
+            interval = loop["require_total_pass_point"] - cap["require_total_pass_point"]
+            if interval > 0 and user_view(definition, levels, record)["loop_pass_point"] >= interval:
+                return True
+    return False
+
+
 def top(game, body):
     definition, levels, record = active_pass(game, body["m_mission_pass_id"])
     evaluator = missions(game)

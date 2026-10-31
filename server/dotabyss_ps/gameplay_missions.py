@@ -5,14 +5,14 @@ from types import SimpleNamespace
 
 from .gameplay_catalog import GameplayError, JST, available, identifiers, parse_timestamp
 from .gameplay_records import find, grant, put, rows
-from .gameplay_statistics import bucket, value as statistic_value
+from .gameplay_statistics import TIME_SITUATIONS, aggregation_mode, bucket, value as statistic_value
+from .gameplay_pass_statistics import claim_key as pass_claim_key, prepare as prepare_pass_statistics, value as pass_statistic_value
 from .gameplay_rules import load_rules
 from .gameplay_delivery import deliver
 from .gameplay_character_levels import effective_character_level
 from .gameplay_story_state import is_quest_complete
 from .gameplay_comeback import special_window
 
-TIME_SITUATIONS = {110200, 110201, 110202, 110500, 110600, 110700}
 COUNTER_SITUATIONS = {40300, 40400, 40500, 50000, 60000, 80000, 80002, 80003, 90000, 110000, 110001, 110002, 110003,
                      110004, 110005, 110300, 110400, 120000, 120001, 120002, 120003, 120004, 120005, 120007, 120013,
                      120014, 120015, 120017, 120018, 130000, 130001, 140000, 140001, 150000, 150100, 160100,
@@ -26,14 +26,20 @@ class Missions:
         self.state, self.progress, self.catalog, self.now, self.user_id = state, progress, catalog, now, user_id
         self.rules = load_rules() if rules is None else rules
         self.statistics = bucket(progress)
+        prepare_pass_statistics(self)
 
     def key(self, mission):
+        if mission.get("m_mission_pass_id") and mission["mission_type"] in (5, 6):
+            return pass_claim_key(mission, self.catalog.get("m_mission_passes", mission["m_mission_pass_id"]), self.now)
         kind = mission["mission_type"]
         period = self.now.date().isoformat() if kind in (2, 8) else self.now.date().strftime("%G-W%V") if kind in (3, 6) else "once"
         return f"{period}:{mission['id']}"
 
     def value(self, mission):
         situation = mission["situation_type"]
+        if mission.get("m_mission_pass_id") and mission["mission_type"] in (5, 6) and situation in COUNTER_SITUATIONS | TIME_SITUATIONS | {160000, 210000}:
+            result = pass_statistic_value(self, mission)
+            return result if situation in TIME_SITUATIONS else result or 0
         if situation in (120001, 120002, 120005, 120015) and type(self) is Missions:
             from .gameplay_nether_missions import NetherMissions
 
@@ -110,7 +116,7 @@ class Missions:
                 value = self.catalog.get("m_mission_terms", term).get("start_at")
                 if value:
                     start = date.fromisoformat(value[:10])
-            mode = "min" if situation in TIME_SITUATIONS else "max" if situation in (110300, 160000, 170100, 210000, 270000) else "add"
+            mode = aggregation_mode(situation)
             value = statistic_value(self.progress, self.now, mission, mode=mode, start=start, data=self.statistics)
             return value if situation in TIME_SITUATIONS else value or 0
         return None
@@ -120,6 +126,8 @@ class Missions:
         return value is not None and (0 < value <= mission["require_value"] if mission["situation_type"] in TIME_SITUATIONS else value >= mission["require_value"])
 
     def active(self, mission):
+        if mission.get("m_mission_pass_id") and not available(self.catalog.get("m_mission_passes", mission["m_mission_pass_id"]), self.now):
+            return False
         term = mission.get("m_mission_term_id", 0)
         return not term or available(self.catalog.get("m_mission_terms", term), self.now)
 
@@ -181,6 +189,8 @@ class Missions:
                 and self.prerequisites(mission) and self.key(mission) not in self.progress["mission_claims"])
 
     def badges(self):
+        from .gameplay_pass import receivable as pass_receivable
+
         ordinary = any(self.receivable(m) for m in self.catalog.rows("m_missions")
                        if m["mission_type"] in (1, 2, 3) and not m.get("m_mission_pass_id"))
         special = []
@@ -194,7 +204,7 @@ class Missions:
                         if d["m_special_mission_id"] == record["m_special_mission_id"] and d["day"] <= elapsed]
             special.append({"t_special_mission_id": record["id"], "m_special_mission_id": record["m_special_mission_id"],
                             "is_receivable": int(any(self.receivable(m) for m in eligible))})
-        return {"info": 0, "present_count": 0, "mission_reward": int(ordinary), "mission_pass_reward": 0,
+        return {"info": 0, "present_count": 0, "mission_reward": int(ordinary), "mission_pass_reward": int(pass_receivable(self, self)),
                 "sp_mission_reward": special, "building": 0, "unarrived_plan_mission": 0}
 
     def receive(self, requested, special_id=None, *, allowed_ids=None):

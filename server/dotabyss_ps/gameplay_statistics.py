@@ -6,6 +6,12 @@ import re
 from .gameplay_catalog import GameplayError, number
 from .gameplay_records import rows
 
+TIME_SITUATIONS = {110200, 110201, 110202, 110500, 110600, 110700}
+
+
+def aggregation_mode(situation):
+    return "min" if situation in TIME_SITUATIONS else "max" if situation in (110300, 160000, 170100, 210000, 270000) else "add"
+
 
 def bucket(progress):
     entry = progress["features"].setdefault("statistics", {"version": 1, "data": {}})
@@ -49,6 +55,9 @@ def record(progress, now, situation, amount=1, target=0, sub=0, *, mode="add"):
         if mode not in ("add", "max", "min"):
             raise ValueError("Invalid statistics aggregation")
         values[identity] = number(value, 0, 2 ** 31 - 1)
+    from .gameplay_pass_statistics import record_periods
+
+    record_periods(progress, now, identity, amount, mode)
 
 
 def initialize(state, progress, catalog):
