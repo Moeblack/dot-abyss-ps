@@ -89,6 +89,44 @@ def test_conflicting_modified_dictionary_preserves_old_installation(case):
     assert tree(case.target) == before and case.config.read_bytes() == config
 
 
+def test_user_dictionary_survives_multiple_updates(case):
+    relative = "cache/translations/other/local/zh_Hant.json"
+    write_json(case.target / relative, {"補充": "私有補充"})
+    install.install(case.stage, case.client, case.report)
+    for number in range(2):
+        stage = case.artifacts / f"next-{number}"
+        report = package(stage, f"譯文{number}")
+        install.install(stage, case.client, report)
+        assert install.read_json(case.target / relative) == {"補充": "私有補充"}
+        manifest = install.read_json(case.target / "integration-manifest.json")
+        assert manifest["user_files"] == [relative]
+        assert "local" in install.read_json(case.target / "cache/translations/manifest/zh_Hant.json")["other"]
+
+
+def test_legacy_manifest_retains_dictionary_absent_from_new_package(case):
+    relative = "cache/translations/other/custom/zh_Hant.json"
+    write_json(case.target / relative, {"補充": "舊版保留內容"})
+    path = case.target / "integration-manifest.json"
+    manifest = install.read_json(path)
+    manifest["files"][relative] = install.digest(case.target / relative)
+    write_json(path, manifest)
+    install.install(case.stage, case.client, case.report)
+    assert (case.target / relative).exists()
+    assert relative in install.read_json(case.target / "integration-manifest.json")["user_files"]
+
+
+def test_withdrawn_managed_dictionary_is_not_misclassified_as_user_file(case):
+    relative = "cache/translations/other/withdrawn/zh_Hant.json"
+    write_json(case.target / relative, {"廢止": "舊的自動補譯"})
+    path = case.target / "integration-manifest.json"
+    manifest = install.read_json(path)
+    manifest["files"][relative] = install.digest(case.target / relative)
+    manifest["user_files"] = []
+    write_json(path, manifest)
+    install.install(case.stage, case.client, case.report)
+    assert not (case.target / relative).exists()
+
+
 @pytest.mark.parametrize("unexpected", [False, True])
 def test_prepared_package_is_verified_before_replacing_installed_plugin(case, unexpected):
     (case.stage / ("extra.dll" if unexpected else "AbyssMod.dll")).write_bytes(b"unexpected payload")

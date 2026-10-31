@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../runtime/*.cs" />
+    <Compile Include="UiPipeline.cs" />
+    <Compile Include="$(PatchedSourceDir)/Services/AbilityTextMatcher.cs" />
+    <Compile Include="$(PatchedSourceDir)/Services/TemplateTextMatcher.cs" />
+    <Compile Include="$(PatchedSourceDir)/Services/UiTextTranslator.cs" />
+    <Compile Include="$(PatchedSourceDir)/Patches/TextTranslator.cs" />
+    <Compile Include="$(PatchedSourceDir)/Patches/GeneralTextPatch.cs" />
+  </ItemGroup>
+  <Target Name="RequirePatchedSource" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(PatchedSourceDir)' == ''" Text="Pass PatchedSourceDir pointing to the validated, patched source copy." />
+  </Target>
+</Project>

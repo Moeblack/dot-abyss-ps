@@ -1,0 +1,368 @@
+--- a/AbyssMod/Patches/GeneralTextPatch.cs
++++ b/AbyssMod/Patches/GeneralTextPatch.cs
+@@ -38,6 +38,16 @@
+     public static void OnWorldTextEnable(TextMeshPro __instance) =>
+         TranslateStaticUiText(__instance);
+ 
++    [HarmonyPrefix]
++    [HarmonyPatch(typeof(TextMeshProUGUI), nameof(TextMeshProUGUI.OnDestroy))]
++    public static void OnUiTextDestroy(TextMeshProUGUI __instance) =>
++        Revisions.Forget(__instance.GetInstanceID());
++
++    [HarmonyPrefix]
++    [HarmonyPatch(typeof(TextMeshPro), nameof(TextMeshPro.OnDestroy))]
++    public static void OnWorldTextDestroy(TextMeshPro __instance) =>
++        Revisions.Forget(__instance.GetInstanceID());
++
+     private static void TranslateStaticUiText(TMP_Text text)
+     {
+         if (text == null || !Config.Translation.Value || UiTextTranslator.IsInputValue(text))
+@@ -45,7 +55,8 @@
+ 
+         try
+         {
+-            string translated = UiTextTranslator.Translate(text, text.text);
++            string translated = text.text;
++            ApplyTranslation(ref translated, text);
+             if (!string.Equals(translated, text.text, StringComparison.Ordinal))
+             {
+                 _inTranslation = true;
+@@ -91,7 +102,7 @@
+                     continue;
+ 
+                 string s = tmp.text;
+-                if (string.IsNullOrEmpty(s) || !TextTranslator.HasKana(s))
++                if (string.IsNullOrEmpty(s))
+                     continue;
+ 
+                 string before = s;
+@@ -126,10 +137,17 @@
+ 
+     [ThreadStatic]
+     private static bool _inTranslation;
++    private static readonly LocalTextRevisions Revisions = new();
++
++    public static void ResetTranslations() => Revisions.Clear();
+ 
+     private static void ApplyTranslation(ref string s, TMP_Text instance = null)
+     {
+-        if (_inTranslation || UiTextTranslator.IsInputValue(instance)) return;
++        if (_inTranslation || string.IsNullOrEmpty(s) || UiTextTranslator.IsInputValue(instance)) return;
++        int identifier = instance != null ? instance.GetInstanceID() : 0;
++        if (instance != null && Revisions.IsCurrent(identifier, s))
++            return;
++        string original = s;
+         _inTranslation = true;
+         try
+         {
+@@ -162,6 +180,8 @@
+         }
+         finally
+         {
++            if (instance != null)
++                Revisions.Record(identifier, original, s);
+             _inTranslation = false;
+         }
+     }
+--- a/AbyssMod/Services/AbilityTextMatcher.cs
++++ b/AbyssMod/Services/AbilityTextMatcher.cs
+@@ -1,130 +1,25 @@
+ using System;
+ using System.Collections.Generic;
+-using System.Text.RegularExpressions;
++using System.Threading;
+ 
+ namespace AbyssMod.Services;
+ 
+-/// <summary>
+-/// 技能描述模糊匹配：游戏 UI 常显示已代入数值的日文（31.4%），
+-/// 而 ability_descriptions 字典 key 为含 {[...]} 的 Masterdata 模板。
+-/// </summary>
+ public static class AbilityTextMatcher
+ {
+-    private static Dictionary<string, string> _exact = new();
+-    private static Dictionary<string, string> _bySkeleton = new();
++    private static LocalTextMatcher _matcher = new(Array.Empty<KeyValuePair<string, string>>(), LocalTemplateKind.Ability);
+ 
+-    private static readonly Regex KeySlot = new(@"\{\[[^\]]+\]\}", RegexOptions.Compiled);
+-    private static readonly Regex ValueSlot = new(
+-        @"\{[0-9]+(?:\.[0-9]+)?%\}|[0-9]+(?:\.[0-9]+)?%",
+-        RegexOptions.Compiled
+-    );
+-    private static readonly Regex TranslationSlot = new(@"\{\[[^\]]+\]\}", RegexOptions.Compiled);
++    public static void Rebuild(Dictionary<string, string> abilityDescriptions) =>
++        Interlocked.Exchange(ref _matcher, new LocalTextMatcher(abilityDescriptions, LocalTemplateKind.Ability));
+ 
+-    public static void Rebuild(Dictionary<string, string> abilityDescriptions)
+-    {
+-        _exact = abilityDescriptions ?? new Dictionary<string, string>();
+-        _bySkeleton = new Dictionary<string, string>(StringComparer.Ordinal);
++    public static bool LooksLikeAbility(string text) => !string.IsNullOrEmpty(text) && (
++        text.Contains("ダメージ", StringComparison.Ordinal)
++        || text.Contains("HIT", StringComparison.OrdinalIgnoreCase)
++        || text.Contains("紋章", StringComparison.Ordinal)
++        || text.Contains("スキル", StringComparison.Ordinal)
++        || text.Contains("【効果】", StringComparison.Ordinal)
++        || text.Contains("【発動条件】", StringComparison.Ordinal)
++        || text.Contains("フォースチェイン", StringComparison.Ordinal));
+ 
+-        foreach (var kv in _exact)
+-        {
+-            string skeleton = ToKeySkeleton(kv.Key);
+-            if (string.IsNullOrEmpty(skeleton))
+-                continue;
+-            _bySkeleton.TryAdd(skeleton, kv.Value);
+-        }
+-    }
+-
+-    public static bool LooksLikeAbility(string text)
+-    {
+-        if (string.IsNullOrEmpty(text) || !HasKana(text))
+-            return false;
+-
+-        return text.Contains("ダメージ", StringComparison.Ordinal)
+-            || text.Contains("HIT", StringComparison.OrdinalIgnoreCase)
+-            || text.Contains("紋章", StringComparison.Ordinal)
+-            || text.Contains("スキル", StringComparison.Ordinal)
+-            || text.Contains("【効果】", StringComparison.Ordinal)
+-            || text.Contains("【発動条件】", StringComparison.Ordinal)
+-            || text.Contains("フォースチェイン", StringComparison.Ordinal);
+-    }
+-
+-    public static bool TryTranslate(string text, out string result)
+-    {
+-        result = null;
+-        if (string.IsNullOrEmpty(text) || _exact.Count == 0)
+-            return false;
+-
+-        text = NormalizeBrackets(text);
+-
+-        if (_exact.TryGetValue(text, out result))
+-            return true;
+-
+-        string skeleton = ToValueSkeleton(text);
+-        if (!_bySkeleton.TryGetValue(skeleton, out string templateTranslation))
+-            return false;
+-
+-        var values = ExtractValues(text);
+-        result = ApplyValues(templateTranslation, values);
+-        return !string.IsNullOrEmpty(result);
+-    }
+-
+-    private static string NormalizeBrackets(string s) =>
+-        s.Replace('「', '【').Replace('」', '】');
+-
+-    private static string ToKeySkeleton(string s)
+-    {
+-        s = NormalizeBrackets(s);
+-        int i = 0;
+-        return KeySlot.Replace(s, _ => "{" + (i++) + "}");
+-    }
+-
+-    private static string ToValueSkeleton(string s)
+-    {
+-        s = NormalizeBrackets(s);
+-        int i = 0;
+-        return ValueSlot.Replace(s, _ => "{" + (i++) + "}");
+-    }
+-
+-    private static List<string> ExtractValues(string s)
+-    {
+-        s = NormalizeBrackets(s);
+-        var values = new List<string>();
+-        foreach (Match m in ValueSlot.Matches(s))
+-        {
+-            string v = m.Value;
+-            if (v.StartsWith('{') && v.EndsWith('}'))
+-                v = v[1..^1];
+-            values.Add(v);
+-        }
+-        return values;
+-    }
+-
+-    private static string ApplyValues(string translation, List<string> values)
+-    {
+-        if (values.Count == 0)
+-            return translation;
+-
+-        int i = 0;
+-        bool ok = true;
+-        string result = TranslationSlot.Replace(translation, _ =>
+-        {
+-            if (i >= values.Count)
+-            {
+-                ok = false;
+-                return _.Value;
+-            }
+-            return values[i++];
+-        });
+-        return ok ? result : null;
+-    }
+-
+-    private static bool HasKana(string s)
+-    {
+-        foreach (char c in s)
+-        {
+-            if ((c >= '\u3040' && c <= '\u309F') || (c >= '\u30A0' && c <= '\u30FF'))
+-                return true;
+-        }
+-        return false;
+-    }
++    public static bool TryTranslate(string text, out string result) =>
++        Volatile.Read(ref _matcher).TryTranslate(text, out result);
+ }
+--- a/AbyssMod/Services/TemplateTextMatcher.cs
++++ b/AbyssMod/Services/TemplateTextMatcher.cs
+@@ -1,86 +1,29 @@
++using System;
+ using System.Collections.Generic;
+-using System.Text.RegularExpressions;
++using System.Threading;
+ 
+ namespace AbyssMod.Services;
+ 
+-/// <summary>
+-/// 将游戏内已代入数值的 UI 文本（如「スタミナを500消費」）匹配到
+-/// 字典中带 {0} 占位符的模板 key（如「スタミナを{0}消費する」）。
+-/// 算法与 <see cref="MachineTranslator"/> 的数字模板一致。
+-/// </summary>
+ public static class TemplateTextMatcher
+ {
+-    private static Dictionary<string, string> _exact = new();
+-
+-    private static readonly Regex TagOrNumber = new(
+-        @"<[^>]*>|[0-9]+(?:\.[0-9]+)?",
+-        RegexOptions.Compiled
+-    );
+-    private static readonly Regex Placeholder = new(@"\{(\d+)\}", RegexOptions.Compiled);
++    private static LocalTextMatcher _matcher = new(Array.Empty<KeyValuePair<string, string>>(), LocalTemplateKind.Indexed);
+ 
+     public static void Rebuild(params Dictionary<string, string>[] sources)
+     {
+-        var merged = new Dictionary<string, string>();
+-        if (sources != null)
++        var merged = new Dictionary<string, string>(StringComparer.Ordinal);
++        foreach (var source in sources ?? Array.Empty<Dictionary<string, string>>())
+         {
+-            foreach (var source in sources)
++            if (source == null)
++                continue;
++            foreach (var pair in source)
+             {
+-                if (source == null)
+-                    continue;
+-                foreach (var kv in source)
+-                    merged[kv.Key] = kv.Value;
++                if (!string.IsNullOrEmpty(pair.Key) && !string.IsNullOrEmpty(pair.Value))
++                    merged[pair.Key] = pair.Value;
+             }
+         }
+-        _exact = merged;
++        Interlocked.Exchange(ref _matcher, new LocalTextMatcher(merged, LocalTemplateKind.Indexed));
+     }
+ 
+-    public static bool TryTranslate(string text, out string result)
+-    {
+-        result = null;
+-        if (string.IsNullOrEmpty(text) || _exact.Count == 0)
+-            return false;
+-
+-        if (_exact.TryGetValue(text, out result))
+-            return true;
+-
+-        var (template, numbers) = Normalize(text);
+-        if (template == text || !_exact.TryGetValue(template, out var translated))
+-            return false;
+-
+-        result = Fill(translated, numbers);
+-        return !string.IsNullOrEmpty(result);
+-    }
+-
+-    private static (string template, string[] numbers) Normalize(string text)
+-    {
+-        var nums = new List<string>();
+-        int i = 0;
+-        var template = TagOrNumber.Replace(text, m =>
+-        {
+-            if (m.Value.Length > 0 && m.Value[0] == '<')
+-                return m.Value;
+-            nums.Add(m.Value);
+-            return "{" + (i++) + "}";
+-        });
+-        return (template, nums.ToArray());
+-    }
+-
+-    private static string Fill(string template, string[] numbers)
+-    {
+-        if (numbers.Length == 0)
+-            return template;
+-
+-        bool ok = true;
+-        var result = Placeholder.Replace(template, m =>
+-        {
+-            int idx = int.Parse(m.Groups[1].Value);
+-            if (idx < 0 || idx >= numbers.Length)
+-            {
+-                ok = false;
+-                return m.Value;
+-            }
+-            return numbers[idx];
+-        });
+-        return ok ? result : null;
+-    }
++    public static bool TryTranslate(string text, out string result) =>
++        Volatile.Read(ref _matcher).TryTranslate(text, out result);
+ }
+--- a/AbyssMod/Services/TranslationManager.cs
++++ b/AbyssMod/Services/TranslationManager.cs
+@@ -125,10 +125,7 @@
+         Names = GetTable(TranslationPaths.Names) ?? [];
+         Titles = GetTable(TranslationPaths.Titles) ?? [];
+         Descriptions = GetTable(TranslationPaths.Descriptions) ?? [];
+-        AbilityDescriptions =
+-            GetTable(TranslationPaths.AbilityDescriptions)
+-            ?? GetTable("m_ability_details")
+-            ?? [];
++        AbilityDescriptions = LocalTranslationTables.Abilities(GetTable);
+ 
+         await _cache.SyncLegacyUiMiscAsync();
+         await _cache.SyncAddOnFromCdnAsync();
+@@ -137,7 +134,8 @@
+ 
+         await MergeLocalAddOnFallbackAsync();
+         AbilityTextMatcher.Rebuild(AbilityDescriptions);
+-        TemplateTextMatcher.Rebuild(Texts, Titles, Descriptions);
++        TemplateTextMatcher.Rebuild(LocalTranslationTables.WithoutAbilities(Texts, AbilityDescriptions), Titles, Descriptions);
++        GeneralTextPatch.ResetTranslations();
+         GeneralTextPatch.RefreshAllVisibleText();
+     }
+ 
+--- a/AbyssMod/Services/UiTextTranslator.cs
++++ b/AbyssMod/Services/UiTextTranslator.cs
+@@ -23,9 +23,6 @@
+         if (table == null || table.Count == 0)
+             return value;
+ 
+-        if (IsAlreadyTranslated(table, value))
+-            return value;
+-
+         if (table.TryGetValue(value, out string hit) && !string.IsNullOrEmpty(hit))
+             return hit;
+ 
+@@ -47,16 +44,6 @@
+ 
+         var input = text.GetComponentInParent<TMP_InputField>(true);
+         return input != null && input.textComponent == text;
+-    }
+-
+-    private static bool IsAlreadyTranslated(Dictionary<string, string> table, string value)
+-    {
+-        foreach (string translated in table.Values)
+-        {
+-            if (string.Equals(translated, value, StringComparison.Ordinal))
+-                return true;
+-        }
+-        return false;
+     }
+ 
+     private static Dictionary<string, string> GetTable()

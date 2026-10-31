@@ -24,7 +24,7 @@ python -m venv .venv
 
 ## 中文翻译
 
-繁体译文使用 [s88037zz/dotabyss-translation](https://github.com/s88037zz/dotabyss-translation)，翻译插件使用 [s88037zz/AbyssMod](https://github.com/s88037zz/AbyssMod)。保留上游译文，提供本地缓存及输入框兼容处理。
+繁体译文使用 [s88037zz/dotabyss-translation](https://github.com/s88037zz/dotabyss-translation)，翻译插件使用 [s88037zz/AbyssMod](https://github.com/s88037zz/AbyssMod)。提供本地缓存，并补充技能说明、新手引导、通用界面、任务和商店译文；启动器更新时会自动合并补译。
 
 配置与更新方式见 [翻译集成说明](pc-translation/README.md)。AbyssMod 的 MIT 许可保存在 [LICENSE.AbyssMod](pc-translation/LICENSE.AbyssMod)，译文许可按译文项目的上游说明处理。
 

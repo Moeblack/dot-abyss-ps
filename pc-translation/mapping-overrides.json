@@ -1,0 +1,25 @@
+{
+  "MCharacterActionSkills": {
+    "name": "m_character_action_skills"
+  },
+  "MCoachingResultTips": {
+    "title": "m_coaching_result_tips",
+    "text": "m_coaching_result_tips"
+  },
+  "MCoachingTipGroups": {
+    "name": "m_coaching_tip_groups"
+  },
+  "MCoachingTips": {
+    "title": "m_coaching_tips",
+    "description": "m_coaching_tips"
+  },
+  "MFeatureTips": {
+    "name": "m_feature_tips"
+  },
+  "MCoachingCategories": {
+    "name": "m_coaching_categories"
+  },
+  "MCoachingQuests": {
+    "name": "m_coaching_quests"
+  }
+}

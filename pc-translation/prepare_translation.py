@@ -98,6 +98,9 @@ def progress(phase, message, percent):
 
 
 def prepare(source, plugin_source, client=None, *, notify=progress):
+    from translation_overlays import extend_mapping, merge_overrides
+
+    integration = ROOT / "pc-translation"
     notify("validate", "Checking translation dictionaries", 50)
     tree = source / "translations"
     manifest = read_json(tree / "manifest" / f"{LANGUAGE}.json")
@@ -122,11 +125,18 @@ def prepare(source, plugin_source, client=None, *, notify=progress):
     mapping = read_json(plugin_source / "AbyssMod" / "AbyssMod.master_mapping.json")
     mapping["tables"].pop("MNgWords", None)
     mapping["dict_types"] = [name for name in mapping["dict_types"] if name != "m_ng_words"]
+    mapping = extend_mapping(mapping, read_json(integration / "mapping-overrides.json"))
     (ARTIFACTS / "master_mapping.json").write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
     notify("build", "Building the translation plugin", 60)
+    build_source = Path(tempfile.mkdtemp(prefix="build-source-", dir=ARTIFACTS))
+    shutil.copytree(plugin_source / "AbyssMod", build_source / "AbyssMod", ignore=shutil.ignore_patterns("bin", "obj", ".git"))
+    patch = integration / "general-text-compat.patch"
+    patch_command = ["git", "-C", str(ROOT), "apply", "--directory=" + build_source.relative_to(ROOT).as_posix()]
+    subprocess.run([*patch_command, "--check", str(patch)], check=True)
+    subprocess.run([*patch_command, str(patch)], check=True)
     runtime = client if client and (client / "BepInEx" / "interop" / "Project.dll").is_file() else WORKSPACE / "dotabyss_pc" / "toolchain" / "runtime"
     subprocess.run(["dotnet", "build", str(ROOT / "pc-translation" / "AbyssMod.Local.csproj"), "-c", "Release", "--nologo",
-                    "-p:SourceDir=" + str(plugin_source / "AbyssMod"), "-p:ClientDir=" + str(runtime),
+                    "-p:SourceDir=" + str(build_source / "AbyssMod"), "-p:ClientDir=" + str(runtime),
                     "-p:DependencyDir=" + str(ARTIFACTS / "dependencies"), "-p:MappingPath=" + str(ARTIFACTS / "master_mapping.json")], check=True)
     notify("stage", "Preparing the local translation cache", 75)
     stage = Path(tempfile.mkdtemp(prefix="prepared-", dir=ARTIFACTS))
@@ -144,7 +154,12 @@ def prepare(source, plugin_source, client=None, *, notify=progress):
         fallback.parent.mkdir(parents=True, exist_ok=True)
         fallback.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
     shutil.copy2(tree / "manifest" / f"{LANGUAGE}.json", stage / f"source-manifest.{LANGUAGE}.json")
+    supplements = merge_overrides(cache, integration / "overrides", integration / "corrections.json")
     rebuild_manifest(cache)
+    counts["supplement_entries"] = supplements["added"]
+    counts["corrected_entries"] = supplements["corrected"]
+    counts["installed_entries"] = sum(len(read_json(path)) for path in cache.rglob(f"{LANGUAGE}.json")
+                                      if path.parent.name != "manifest")
     shutil.copy2(ROOT / "pc-translation" / "bin" / "Release" / "net6.0" / "AbyssMod.dll", stage / "AbyssMod.dll")
     shutil.copy2(ARTIFACTS / "dependencies" / "Utility.dll", stage / "Utility.dll")
     (stage / "fonts").mkdir()
@@ -153,7 +168,12 @@ def prepare(source, plugin_source, client=None, *, notify=progress):
     report = {"format_version": 1, "language": LANGUAGE, "offline": True,
               "plugin_source": "https://github.com/s88037zz/AbyssMod", "plugin_commit": revision(plugin_source),
               "translation_source": "https://github.com/s88037zz/dotabyss-translation", "translation_commit": revision(source),
-              "source_hashes": {str(path.relative_to(plugin_source)).replace("\\", "/"): digest(path) for path in (plugin_source / "AbyssMod").rglob("*.cs")},
+              "source_hashes": {path.relative_to(build_source).as_posix(): digest(path) for path in (build_source / "AbyssMod").rglob("*.cs")},
+              "runtime_hashes": {path.name: digest(path) for path in (integration / "runtime").glob("*.cs")},
+              "supplements": supplements,
+              "integration_hashes": {path.relative_to(integration).as_posix(): digest(path) for path in integration.rglob("*")
+                                     if path.is_file() and (path.suffix == ".patch" or path.name in ("mapping-overrides.json", "corrections.json")
+                                                            or path.is_relative_to(integration / "overrides"))},
               "excluded_mappings": ["MNgWords"], "counts": counts,
               "files": {str(path.relative_to(stage)).replace("\\", "/"): digest(path) for path in stage.rglob("*") if path.is_file()}}
     (stage / "integration-manifest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -223,22 +243,27 @@ def require_game_stopped(client):
 
 def merge_local_dictionaries(target, stage):
     if not target.exists():
-        return
+        return []
     prior = read_json(target / "integration-manifest.json") if (target / "integration-manifest.json").exists() else {"files": {}}
+    user_files = set(prior.get("user_files", []))
+    retained = []
     for local in (target / "cache" / "translations").rglob("*.json"):
         checked(local, target)
         relative = local.relative_to(target)
         key = relative.as_posix()
         changed = key not in prior["files"] or digest(local) != prior["files"][key]
-        if not changed:
-            continue
         destination = stage / relative
+        legacy_extra = "user_files" not in prior and not destination.exists()
+        if not changed and key not in user_files and not legacy_extra:
+            continue
         if destination.exists():
             if destination.read_bytes() != local.read_bytes():
                 raise ValueError("A local translation conflicts with the update; preserve it first: " + key)
         else:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(local, destination)
+        retained.append(key)
+    return sorted(retained)
 
 
 def install(stage, client, report):
@@ -254,9 +279,9 @@ def install(stage, client, report):
     for relative, expected in report["files"].items():
         if digest(checked(stage / relative, stage)) != expected:
             raise ValueError("Prepared translation file failed verification: " + relative)
-    merge_local_dictionaries(target, stage)
+    user_files = merge_local_dictionaries(target, stage)
     rebuild_manifest(stage / "cache" / "translations")
-    report = {**report, "files": {path.relative_to(stage).as_posix(): digest(path) for path in stage.rglob("*")
+    report = {**report, "user_files": user_files, "files": {path.relative_to(stage).as_posix(): digest(path) for path in stage.rglob("*")
                                  if path.is_file() and path != stage / "integration-manifest.json"}}
     (stage / "integration-manifest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     backup = ARTIFACTS / "backups" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")

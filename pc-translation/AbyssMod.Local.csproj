@@ -16,6 +16,7 @@
   <ItemGroup>
     <Compile Include="$(SourceDir)\**\*.cs" Exclude="$(SourceDir)\bin\**;$(SourceDir)\obj\**" />
     <Compile Include="PluginInfo.cs" />
+    <Compile Include="runtime\*.cs" />
     <Reference Include="$(ClientDir)\BepInEx\core\*.dll" Exclude="$(ClientDir)\BepInEx\core\dobby.dll" Private="false" />
     <Reference Include="$(ClientDir)\BepInEx\interop\*.dll" Private="false" />
     <Reference Include="Utility" HintPath="$(DependencyDir)\Utility.dll" Private="false" />
