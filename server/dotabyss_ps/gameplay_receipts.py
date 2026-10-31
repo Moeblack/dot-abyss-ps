@@ -9,7 +9,7 @@ from .gameplay_catalog import GameplayError
 from .gameplay_records import identity_field
 from .protocol import validate_data
 
-FEATURE_NAMES = {"character", "equipment", "exchange", "gacha", "idle", "research", "tavern", "presents", "friends", "library", "party", "statistics", "missions", "mission_pass", "shop", "login", "home", "battle", "battle_rewards", "main_story", "tutorial", "nether", "disaster", "training", "encounter", "union", "side_story", "events"}
+FEATURE_NAMES = {"character", "equipment", "exchange", "gacha", "idle", "research", "tavern", "presents", "friends", "library", "party", "statistics", "missions", "mission_pass", "shop", "login", "home", "battle", "battle_rewards", "main_story", "tutorial", "nether", "disaster", "training", "encounter", "union", "side_story", "events", "feature_unlock"}
 
 
 def validate_additional_progress(progress):

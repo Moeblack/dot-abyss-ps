@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from .gameplay_catalog import GameplayError, number
 from .gameplay_delivery import deliver
-from .gameplay_library import chapter_complete, intimacy_level
+from .gameplay_library import chapter_complete
 from .gameplay_presents import enqueue
 from .gameplay_receipts import feature_data
 from .gameplay_records import find, put, rows
 from .newgame import PROLOGUE_COMPLETED, PROLOGUE_STATES
+from .gameplay_access import reconcile_feature_rewards, staff_registered
 
 GUIDED_RULES = {
     "unlock_common_features": 0,
@@ -129,7 +130,7 @@ def can_unlock_feature(game, identifier):
             if quest is None or quest["sequence"] <= sequence["sequence"]:
                 return False
         elif kind == 3:
-            if sum(intimacy_level(game, character) >= 1 for character in rows(game.state, "t_characters")) < target:
+            if sum(staff_registered(game, character) for character in rows(game.state, "t_characters")) < target:
                 return False
         else:
             raise GameplayError("Unsupported feature unlock condition", 501, 5010)
@@ -141,8 +142,10 @@ def unlock_feature(game, body):
     game.catalog.get("m_feature_locks", identifier)
     current = find(game.state, "t_feature_locks", m_feature_lock_id=identifier)
     if current and current["is_unlocked"]:
+        reconcile_feature_rewards(game)
         return {}
     if not can_unlock_feature(game, identifier):
         raise GameplayError("Feature unlock requirements have not been met")
     put(game.state, "t_feature_locks", {"m_feature_lock_id": identifier}, {"is_unlocked": True})
+    reconcile_feature_rewards(game, just_unlocked=identifier)
     return {}

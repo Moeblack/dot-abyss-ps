@@ -4,7 +4,6 @@ import copy
 from datetime import timedelta
 
 from .gameplay_catalog import GameplayError, number, parse_timestamp
-from .gameplay_missions import Missions
 from .gameplay_records import find, put, rows
 from .gameplay_routes import route
 
@@ -23,12 +22,19 @@ def campaign_data(game):
     for key, entry in data["entries"].items():
         if not isinstance(key, str) or not key.isascii() or not key.isdecimal() or not isinstance(entry, dict):
             raise GameplayError("Stored encounter campaign identity is invalid")
-        if set(entry) != {"join_at", "bonus_progress", "pending_bonus", "clear_counts"} or not isinstance(entry["clear_counts"], dict):
+        if set(entry) - {"mission_stats"} != {"join_at", "bonus_progress", "pending_bonus", "clear_counts"} or not isinstance(entry["clear_counts"], dict):
             raise GameplayError("Stored encounter campaign progress is invalid")
         parse_timestamp(entry["join_at"])
         number(entry["bonus_progress"], 0, 2 ** 31 - 1)
         for amount in entry["clear_counts"].values():
             number(amount, 0, 2 ** 31 - 1)
+        if any(not isinstance(identifier, str) or not identifier.isascii() or not identifier.isdecimal()
+               or int(identifier) <= 0 for identifier in entry["clear_counts"]):
+            raise GameplayError("Stored encounter clear identity is invalid")
+        if "mission_stats" in entry:
+            from .gameplay_event_missions import validate_statistics
+
+            validate_statistics(entry["mission_stats"])
         pending = entry["pending_bonus"]
         if pending is not None:
             if not isinstance(pending, dict) or set(pending) != {"quest_id", "party_no", "area_id", "time_limit"}:
@@ -96,18 +102,15 @@ def mappings(game, definition):
 
 
 def listing(game, body):
+    from .gameplay_campaign_missions import CampaignMissions
+
     identifier = number(body["m_encounter_campaigns_id"])
     definition = game.catalog.get("m_encounter_campaigns", identifier)
     if not available(game, definition, allow_closed=True):
         raise GameplayError("Encounter campaign is outside its available period")
     entry = campaign_data(game)["entries"].get(str(identifier), {})
-    evaluator = Missions(game.state, game.progress, game.catalog, game.now, game.user_id, game.rules)
-    missions = {name: [] for name in ("daily", "weekly", "achievement", "limited")}
-    for mission in game.catalog.rows("m_missions"):
-        if mission["m_mission_term_id"] != definition["m_mission_term_id"] or not evaluator.prerequisites(mission):
-            continue
-        category = "daily" if mission["mission_type"] in (2, 8) else "weekly" if mission["mission_type"] in (3, 6) else "achievement" if mission["mission_type"] == 1 else "limited"
-        missions[category].append(evaluator.view(mission))
+    listed = CampaignMissions(game, definition).listing(preview=True)
+    missions = {"daily": listed["limited_daily"], "weekly": [], "achievement": [], "limited": listed["limited"]}
     return {"additional_encounter_supply": definition["additional_encounter_supply"], "extend_map_areas": campaign_areas(game, definition),
             "missions": missions, "require_clear_count": max(0, definition["require_clear_count_for_bonus"] - entry.get("bonus_progress", 0)),
             "encounters": [{"m_encounter_quest_id": quest["m_encounter_quest_id"], "m_encounter_quest_id_bonus": bonus["m_encounter_quest_id"],
@@ -199,9 +202,15 @@ def settle_campaigns(game):
         entry["pending_bonus"] = None
 
 
-def record_clear(game, encounter):
+def record_clear(game, encounter, *, session=None, stage_results=None):
+    from .gameplay_campaign_missions import record_clear as record_mission_clear
+
     data = campaign_data(game)
     origin = data["origins"].pop(str(encounter["id"]), None)
+    mission_campaign_id = origin["campaign_id"] if origin is not None else (session or {}).get("context", {}).get("mission_campaign_id", 0)
+    if mission_campaign_id:
+        record_mission_clear(game, number(mission_campaign_id), encounter["m_encounter_quest_id"],
+                             session=session, stage_results=stage_results)
     if origin is None:
         return
     definition = game.catalog.get("m_encounter_campaigns", origin["campaign_id"])

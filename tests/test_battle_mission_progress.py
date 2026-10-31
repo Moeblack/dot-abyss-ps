@@ -54,7 +54,7 @@ def test_existing_completed_quests_contribute_without_a_new_counter_or_reward(se
             last = max(row["sequence"] for row in catalog.rows("m_chapter_quest_sequences") if row["m_chapter_quest_id"] == quest["id"])
             put(state, "t_chapter_quests", {"m_chapter_quest_id": quest["id"]}, {
                 "m_chapter_id": area["m_chapter_id"], "m_chapter_area_id": area["id"],
-                "sequence": last + 1 if index < 3 else last,
+                "sequence": 99 if index < 3 else last,
             })
 
     update(c, imported_progress)

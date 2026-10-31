@@ -77,6 +77,7 @@ def test_main_story_start_resume_win_novel_finish_and_next_quest(setup_gameplay)
     assert active_session(context) is None
     assert next(row for row in won["records"]["t_chapter_quests"]["up"] if row["m_chapter_quest_id"] == 1010101)["sequence"] == 3
     finished = call(context, "api/main-story/clear", {"m_chapter_quest_id": 1010101})
+    assert next(row for row in finished["records"]["t_chapter_quests"]["up"] if row["m_chapter_quest_id"] == 1010101)["sequence"] == 99
     assert finished["receive_content_list"]
     assert finished["release_data"]["release_m_chapter_quest_ids"]
     next_quest = finished["release_data"]["release_m_chapter_quest_ids"][0]

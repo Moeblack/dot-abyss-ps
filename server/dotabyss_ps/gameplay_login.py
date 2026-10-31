@@ -17,6 +17,10 @@ def empty_bonus_list():
 
 
 def eligible(game, definition, entry):
+    from .gameplay_comeback import linked_window
+
+    if not entry["paid_at"] and not linked_window(game, "m_come_back_login_bonuses", "m_login_bonus_id", definition["id"])[0]:
+        return False
     if not available(definition, game.now, "begin_at", "end_at"):
         return False
     if definition["condition_type"] != 0 or definition["login_type"] != 1:

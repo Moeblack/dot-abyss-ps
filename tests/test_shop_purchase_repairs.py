@@ -113,11 +113,14 @@ def test_subscription_purchase_grants_today_once_and_preserves_entitlement(setup
 
 
 @pytest.mark.parametrize("payment_type", [1, 2, 4])
-def test_every_current_dmm_product_grants_its_master_pack_and_paid_currency(setup_gameplay, payment_type):
+def test_every_current_dmm_product_grants_its_master_pack_and_paid_currency(setup_gameplay, payment_type, monkeypatch):
     c = setup_gameplay
     call(c, "api/user")
     base = local_game(c)
     catalog = base.catalog
+    if payment_type == 2:
+        monkeypatch.setattr("dotabyss_ps.gameplay_recommendations.eligible", lambda *_: True)
+        monkeypatch.setattr("dotabyss_ps.gameplay_recommendations.active", lambda game, definition, _: available(definition, game.now))
     tested = []
     for payment in catalog.rows("m_payments"):
         if payment["payment_type"] != payment_type or not payment["m_payment_dmm_product_id"]:

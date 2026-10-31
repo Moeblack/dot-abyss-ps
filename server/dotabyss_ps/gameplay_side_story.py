@@ -18,9 +18,11 @@ from .gameplay_side_story_state import (
 )
 from .gameplay_stamina import settle_stamina
 from .gameplay_statistics import record
+from .gameplay_access import require_feature
 
 
 def listing(game, body):
+    require_feature(game, 9)
     data = progress(game)
     return {"side_stories": [{"m_side_story_id": story["id"], "is_new": int(story["id"] not in data["seen_stories"]),
                               "is_completed": int(story_completed(game, story["id"], data))}

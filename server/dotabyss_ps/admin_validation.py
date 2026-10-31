@@ -139,6 +139,10 @@ def auxiliary_states(game, features):
     from .gameplay_pass_state import pass_state
     from .gameplay_login_state import bonus_entry, login_data
     from .gameplay_research import ensure_tutorial_supplies
+    from .gameplay_access import reward_claims
+
+    if "feature_unlock" in features:
+        reward_claims(game)
 
     for name in ("equipment", "party"):
         if name not in features:

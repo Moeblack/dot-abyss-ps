@@ -20,6 +20,7 @@ from test_gameplay import party_body
 def game_with_party(source):
     game = Gameplay(source.state, {}, source.catalog, source.user_id, source.now, source.rules)
     game.execute("api/party/exploration/edit", "POST", party_body())
+    put(game.state, "t_feature_locks", {"m_feature_lock_id": 5}, {"is_unlocked": True})
     return game
 
 

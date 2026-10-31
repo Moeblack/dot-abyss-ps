@@ -9,6 +9,7 @@ from .gameplay_missions import Missions
 from .gameplay_nether_state import POINT_FIELDS, ensure, state
 from .gameplay_records import rows
 from .gameplay_statistics import record as statistic, value as statistic_value
+from .gameplay_access import require_feature
 
 
 class NetherMissions(Missions):
@@ -74,6 +75,7 @@ def definitions(game):
 
 
 def mission_list(game, body):
+    require_feature(game, 5)
     evaluator = NetherMissions(game)
     result = {"achievement": [], "daily": [], "weekly": [], "limited": []}
     for mission in sorted(definitions(game), key=lambda row: (row["display_order"], row["id"])):
@@ -85,6 +87,7 @@ def mission_list(game, body):
 
 
 def mission_receive(game, body):
+    require_feature(game, 5)
     selected = identifiers(body["m_mission_ids"], 100)
     if not selected:
         raise GameplayError("No Nether missions were selected", 400, 4007)

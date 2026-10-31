@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import re
 
 from .gameplay_catalog import GameplayError, identifiers, number
 from .gameplay_missions import Missions
-from .gameplay_records import rows
+from .gameplay_records import find, rows
 from .gameplay_routes import route
 from .gameplay_statistics import key as statistic_key
 
@@ -17,6 +18,10 @@ def statistics(game, event_id):
     from .gameplay_events import event_data
 
     data = event_data(game, event_id).setdefault("mission_stats", {"totals": {}, "days": {}})
+    return validate_statistics(data)
+
+
+def validate_statistics(data):
     if not isinstance(data, dict) or set(data) != {"totals", "days"} or not all(isinstance(v, dict) for v in data.values()):
         raise GameplayError("Stored event mission statistics are invalid")
     if len(data["totals"]) > 10000 or len(data["days"]) > 400:
@@ -28,6 +33,11 @@ def statistics(game, event_id):
             valid = False
         if not valid or not isinstance(values, dict) or len(values) > 10000:
             raise GameplayError("Stored event mission date bucket is invalid")
+    for values in (data["totals"], *data["days"].values()):
+        for key, value in values.items():
+            if not isinstance(key, str) or not re.fullmatch(r"[1-9][0-9]{0,8}:[0-9]{1,19}:[0-9]{1,19}", key):
+                raise GameplayError("Stored event mission statistic key is invalid")
+            number(value, 0, 2 ** 63 - 1)
     return data
 
 
@@ -138,26 +148,72 @@ class EventMissions(Missions):
         return result
 
 
-def mission_list(game, body):
+def evaluator_for_category(game, category_group):
+    from .gameplay_campaign_missions import CampaignMissions
+    from .gameplay_encounter_campaign import available as campaign_available, campaign_data
     from .gameplay_events import require_event
 
-    event = require_event(game, body["m_event_id"], allow_closed=True)
-    return EventMissions(game, event).listing()
+    group = number(category_group)
+    events = [event for event in game.catalog.rows("m_events") if event["m_mission_term_category_group"] == group]
+    terms = {term["id"] for term in game.catalog.rows("m_mission_terms") if term["category_group"] == group}
+    campaigns = [campaign for campaign in game.catalog.tables.get("m_encounter_campaigns", {}).values()
+                 if campaign["m_mission_term_id"] in terms]
+    if events and campaigns or len(events) > 1:
+        raise GameplayError("Mission category has conflicting event definitions", 503, 5036)
+    if events:
+        return EventMissions(game, require_event(game, events[0]["id"], allow_closed=True))
+    if not campaigns:
+        raise GameplayError("Unknown event mission category", 400, 4007)
+    data = campaign_data(game)
+    joined = [campaign for campaign in campaigns if str(campaign["id"]) in data["entries"]]
+    selected = next((campaign for campaign in joined if campaign["id"] == data["current_id"]), None)
+    if selected is None:
+        if not joined:
+            raise GameplayError("Join this encounter campaign before using its missions")
+        if len(joined) != 1:
+            raise GameplayError("Select the encounter campaign for this mission category")
+        selected = joined[0]
+    if not campaign_available(game, selected, allow_closed=True):
+        raise GameplayError("Encounter campaign reward period has ended")
+    return CampaignMissions(game, selected)
+
+
+def evaluator_for_mission(game, mission_id):
+    from .gameplay_campaign_missions import CampaignMissions
+    from .gameplay_encounter_campaign import campaign_data
+
+    mission = game.catalog.get("m_missions", number(mission_id))
+    if not mission["m_mission_term_id"]:
+        return None
+    term = game.catalog.get("m_mission_terms", mission["m_mission_term_id"])
+    events = [event for event in game.catalog.rows("m_events") if event["m_mission_term_category_group"] == term["category_group"]]
+    campaigns = [campaign for campaign in game.catalog.tables.get("m_encounter_campaigns", {}).values()
+                 if campaign["m_mission_term_id"] == term["id"]]
+    if len(events) + len(campaigns) != 1:
+        return None
+    if events:
+        if find(game.state, "t_events", m_event_id=events[0]["id"]) is None:
+            return None
+        evaluator = EventMissions(game, events[0])
+    else:
+        if str(campaigns[0]["id"]) not in campaign_data(game)["entries"]:
+            return None
+        evaluator = CampaignMissions(game, campaigns[0])
+    return evaluator if mission_id in evaluator.allowed_ids else None
+
+
+def mission_list(game, body):
+    return evaluator_for_category(game, body["category_group"]).listing()
 
 
 def mission_receive(game, body):
-    from .gameplay_events import require_event
-
-    group = number(body["category_group"])
-    candidates = [event for event in game.catalog.rows("m_events") if event["m_mission_term_category_group"] == group]
-    if len(candidates) != 1:
-        raise GameplayError("Event mission group does not identify one event", 400, 4007)
-    event = require_event(game, candidates[0]["id"], allow_closed=True)
-    evaluator = EventMissions(game, event)
+    evaluator = evaluator_for_category(game, body["category_group"])
     return evaluator.receive(body["m_mission_ids"], allowed_ids=evaluator.allowed_ids)
 
 
 def receivable_events(game):
+    from .gameplay_campaign_missions import CampaignMissions
+    from .gameplay_encounter_campaign import available as campaign_available, campaign_data
     from .gameplay_events import event_available
 
     joined = {row["m_event_id"] for row in rows(game.state, "t_events")}
@@ -168,17 +224,25 @@ def receivable_events(game):
         evaluator = EventMissions(game, event)
         if any(evaluator.receivable(mission) for mission in evaluator.definitions):
             result.append(event["id"])
+    if "m_encounter_campaigns" not in game.catalog.tables:
+        return result
+    campaigns = campaign_data(game)
+    campaign = game.catalog.get("m_encounter_campaigns", campaigns["current_id"]) if campaigns["current_id"] else None
+    if campaign is not None and campaign_available(game, campaign, allow_closed=True):
+        evaluator = CampaignMissions(game, campaign)
+        if any(evaluator.receivable(mission) for mission in evaluator.definitions):
+            result.append(campaign["id"])
     return result
 
 
 def replay_response(game, path, response):
     prefix = "api/event-mission/list/"
     if path.startswith(prefix):
-        return {**response, **mission_list(game, {"m_event_id": number(int(path[len(prefix):]))})}
+        return {**response, **mission_list(game, {"category_group": number(int(path[len(prefix):]))})}
     return response
 
 
 EVENT_MISSION_ROUTES = {
-    "api/event-mission/list/{0}": route("GET", "m_event_id", mission_list, "m_event_id"),
+    "api/event-mission/list/{0}": route("GET", "category_group", mission_list, "category_group"),
     "api/event-mission/reward/receive": route("POST", "category_group m_mission_ids", mission_receive),
 }

@@ -64,6 +64,7 @@ def resolve_event(game, floor):
 def test_single_save_completes_all_150_floors_and_enters_again(reward_game):
     source = reward_game
     game = Gameplay(source.state, {}, source.catalog, source.user_id, source.now, source.rules)
+    put(game.state, "t_feature_locks", {"m_feature_lock_id": 5}, {"is_unlocked": True})
     execute(game, "party/exploration/edit", party_body())
     put(game.state, "t_items", {"m_item_id": 200002}, {"amount": 100})
     execute(game, "nether/start", {"m_nether_id": 1, "m_nether_map_id": 1, "party_no": 1,

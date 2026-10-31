@@ -8,6 +8,7 @@ from .server_master_bindings import SERVER_TABLES, bound_fields
 from .gameplay_event_tables import EVENT_TABLES
 
 GAMEPLAY_TABLES = {
+    "m_come_backs", "m_come_back_payment_lineups", "m_come_back_login_bonuses", "m_come_back_special_missions",
     *EVENT_TABLES,
     "m_items", "m_user_ranks", "m_stamina_recovery_costs", "m_missions", "m_mission_rewards", "m_mission_terms",
     "m_special_missions", "m_special_mission_days", "m_feature_locks", "m_feature_lock_conditions",

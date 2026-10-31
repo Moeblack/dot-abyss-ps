@@ -28,7 +28,8 @@ def record(context, event_id, quest_id, *, elapsed=10, damage=0, members=None, e
 
 
 def mission(context, event_id, mission_id, **kwargs):
-    response = call(context, f"api/event-mission/list/{event_id}", method="GET", **kwargs)
+    category = GameplayCatalog(context.tables, context.schema).get("m_events", event_id)["m_mission_term_category_group"]
+    response = call(context, f"api/event-mission/list/{category}", method="GET", **kwargs)
     return next(row for section in response.values() if isinstance(section, list) for row in section
                 if row.get("m_mission_id") == mission_id)
 

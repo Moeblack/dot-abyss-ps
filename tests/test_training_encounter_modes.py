@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from dotabyss_ps.app import create_app
 from dotabyss_ps.gameplay_catalog import JST
+from dotabyss_ps.gameplay_records import put
 from test_gameplay import NOW, call, gameplay_master, party_body, setup_gameplay, snapshot
 from test_battle_stages import assert_links, battle_catalog, game_for
 
@@ -31,12 +32,12 @@ def edit(context, change):
 def prepare(context, chapters=False):
     call(context, "api/user")
     call(context, "api/party/exploration/edit", party_body())
+    edit(context, lambda state, _: put(state, "t_feature_locks", {"m_feature_lock_id": 4}, {"is_unlocked": True}))
     if chapters:
         areas = {row["id"]: row for row in table(context, "m_chapter_areas")}
-        steps = table(context, "m_chapter_quest_sequences")
         rows = [{"id": index, "m_chapter_quest_id": quest["id"], "m_chapter_area_id": quest["m_chapter_area_id"],
                  "m_chapter_id": areas[quest["m_chapter_area_id"]]["m_chapter_id"],
-                 "sequence": max(row["sequence"] for row in steps if row["m_chapter_quest_id"] == quest["id"]) + 1}
+                 "sequence": 99}
                 for index, quest in enumerate(table(context, "m_chapter_quests"), 1)]
         edit(context, lambda state, _: state["records"]["t_chapter_quests"].update(up=rows))
 

@@ -7,6 +7,7 @@ from .gameplay_catalog import GameplayError, available, identifiers, number
 from .gameplay_receipts import feature_data
 from .gameplay_records import find, grant, put, rows
 from .gameplay_routes import route
+from .gameplay_story_state import is_quest_complete
 
 DICTIONARIES = {2: ("non_player_characters", "non_player_character"), 3: ("enemies", "enemy"), 4: ("worlds", "world")}
 NOVELS = {1: "mains", 2: "events", 3: "characters", 4: "homes", 5: "character_skins", 6: "prologues", 7: "others"}
@@ -80,9 +81,7 @@ def complete_event_story(game, novel_id):
 
 
 def chapter_complete(game, identifier):
-    quest = find(game.state, "t_chapter_quests", m_chapter_quest_id=identifier)
-    sequences = [r["sequence"] for r in game.catalog.rows("m_chapter_quest_sequences") if r["m_chapter_quest_id"] == identifier]
-    return quest is not None and bool(sequences) and quest["sequence"] > max(sequences)
+    return is_quest_complete(game.state, identifier)
 
 
 def eligible_novel(game, kind, definition):

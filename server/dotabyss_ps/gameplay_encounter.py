@@ -119,6 +119,7 @@ def encounter(game, identifier, *, at=None):
 
 
 def start(game, body):
+    from .gameplay_campaign_missions import mission_campaign_id
     from .gameplay_encounter_campaign import supply_capacity
 
     identifier = number(body["t_idle_exploration_encounter_id"])
@@ -126,8 +127,12 @@ def start(game, body):
     data = battle_state(game)
     if data["active"] is None:
         spend_supply(game, 4, supply_capacity(game))
+    active = data["active"]
+    context = (active["context"] if active is not None and active["kind"] == "encounter"
+               and active["context"].get("encounter_id") == identifier else
+               {"encounter_id": identifier, "mission_campaign_id": mission_campaign_id(game, row)})
     return create_session(game, definition, kind="encounter", quest_id=definition["id"],
-                          party_no=number(body["party_no"], 1, 10), context={"encounter_id": identifier})
+                          party_no=number(body["party_no"], 1, 10), context=context)
 
 
 def finish(game, session, stage_results, *, update_skip_config=True):
@@ -150,7 +155,7 @@ def finish(game, session, stage_results, *, update_skip_config=True):
             "skip_extra_drop_probability": session.get("ability_extra_drop", 0), "skip_additional_drop_rate": extra_drop_bonus(game),
             "skip_party_characters": [character["m_character_id"] for character in rows(game.state, "t_characters") if character["id"] in character_ids]}, game.user_id)
     rows(game.state, "t_idle_exploration_encounters").remove(row)
-    record_clear(game, row)
+    record_clear(game, row, session=session, stage_results=stage_results)
     record_statistic(game.progress, game.now, 150100)
     return result
 
@@ -182,6 +187,7 @@ def close(game, body):
 
 
 def skip(game, body):
+    from .gameplay_campaign_missions import mission_campaign_id
     from .gameplay_encounter_campaign import supply_capacity
 
     digest = operation_digest("api/idle-exploration/encounter/skip-quest", "POST", body)
@@ -196,7 +202,8 @@ def skip(game, body):
         raise GameplayError("Clear this encounter type before skipping")
     spend_supply(game, 4, supply_capacity(game))
     create_session(game, definition, kind="encounter", quest_id=definition["id"], party_no=1,
-                   context={"encounter_id": row["id"], "is_skip": True}, validate_members=False)
+                   context={"encounter_id": row["id"], "is_skip": True,
+                            "mission_campaign_id": mission_campaign_id(game, row)}, validate_members=False)
     session = data["active"]
     result = finish(game, session, skipped_result(session["stage_detail"], session["stage_type"]), update_skip_config=False)
     result.update(skip_count=1, event_drops=[])

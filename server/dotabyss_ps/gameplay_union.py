@@ -11,6 +11,7 @@ from .gameplay_receipts import feature_data, operation_digest
 from .gameplay_records import find, put, rows
 from .gameplay_routes import route
 from .gameplay_statistics import record as record_statistic
+from .gameplay_access import require_feature
 
 
 def progress(game):
@@ -63,6 +64,9 @@ def record_attempts(game, kind, count=1):
 
 def start(game, body):
     identifier = number(body["m_union_request_stage_id"])
+    active = battle_state(game)["active"]
+    if active is None or active["kind"] != "union" or active["quest_id"] != identifier:
+        require_feature(game, 4)
     definition = game.catalog.get("m_union_request_stages", identifier)
     current = union_record(game, definition["m_union_type_id"])
     if definition["stage"] != current["stage"]:
@@ -121,6 +125,7 @@ def close(game, body):
 
 
 def skip(game, body):
+    require_feature(game, 4)
     kind, count = number(body["union_type"], 1, 5), number(body["exec_count"], 1, 100)
     current = union_record(game, kind)
     stages = [row for row in game.catalog.rows("m_union_request_stages") if row["m_union_type_id"] == kind and row["stage"] < current["stage"]]

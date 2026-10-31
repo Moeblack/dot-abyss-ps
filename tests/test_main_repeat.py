@@ -24,10 +24,8 @@ def prepare_repeat(context):
         for quest in catalog.rows("m_chapter_quests"):
             if quest["m_chapter_area_id"] != area["id"]:
                 continue
-            sequence = max(row["sequence"] for row in catalog.rows("m_chapter_quest_sequences")
-                           if row["m_chapter_quest_id"] == quest["id"]) + 1
             put(state, "t_chapter_quests", {"m_chapter_quest_id": quest["id"]}, {
-                "m_chapter_id": area["m_chapter_id"], "m_chapter_area_id": area["id"], "sequence": sequence,
+                "m_chapter_id": area["m_chapter_id"], "m_chapter_area_id": area["id"], "sequence": 99,
             })
         next(row for row in state["records"]["t_timed_parameters"]["up"] if row["type"] == 5)["amount"] = 500
 

@@ -62,6 +62,8 @@ DEFAULT_RULES = {
     "idle_max_settle_ticks": 10000,
     "idle_max_boost_ticks": 4000,
     "tavern_staff_intimacy_level": 1,
+    "comeback_inactive_days": 30,
+    "recommendation_board_sheet_requirements": {"260099": 2, "260100": 4, "260101": 6, "260102": 8},
     "tavern_free_runs": 1,
     "tavern_base_score": 100,
     "tavern_combo_permille": 500,
@@ -155,6 +157,7 @@ RULE_BOUNDS = {
     "idle_max_settle_ticks": (1, 10000),
     "idle_max_boost_ticks": (1, 10000),
     "tavern_staff_intimacy_level": (0, 20),
+    "comeback_inactive_days": (0, 3650),
     "tavern_free_runs": (0, 100),
     "tavern_base_score": (1, 10000),
     "tavern_combo_permille": (0, 10000),
@@ -223,6 +226,12 @@ def validate_rules(settings: dict) -> dict:
                 or any(type(value) is not int or not 1 <= value < 2 ** 31 for value in event_ids)
                 or len(set(event_ids)) != len(event_ids)):
             raise GameplayError("Invalid event identifiers: " + key, 503, 5036)
+    requirements = result["recommendation_board_sheet_requirements"]
+    if (not isinstance(requirements, dict) or len(requirements) > 1000 or any(
+            not isinstance(key, str) or not re.fullmatch(r"[1-9][0-9]{0,18}", key)
+            or int(key) > 2 ** 63 - 1 or type(value) is not int or not 1 <= value <= 100000
+            for key, value in requirements.items())):
+        raise GameplayError("Invalid recommendation board sheet requirements", 503, 5036)
     codes = result["local_serial_codes"]
     if not isinstance(codes, dict) or len(codes) > 1000:
         raise GameplayError("Invalid local serial-code map", 503, 5036)

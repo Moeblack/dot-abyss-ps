@@ -4,6 +4,7 @@ from .admin_actions_common import MAX_VALUE, changed, choice, field, no_battle, 
 from .gameplay_catalog import GameplayError, number
 from .gameplay_receipts import feature_data
 from .gameplay_records import find, put, rows
+from .gameplay_story_state import COMPLETED_SEQUENCE
 
 
 def finish_story(game, identifiers, *, rewards=False):
@@ -43,7 +44,7 @@ def finish_story(game, identifiers, *, rewards=False):
         area = game.catalog.get("m_chapter_areas", quest["m_chapter_area_id"])
         steps = sequences(game, identifier)
         put(game.state, "t_chapter_quests", {"m_chapter_quest_id": identifier}, {
-            "m_chapter_id": area["m_chapter_id"], "m_chapter_area_id": area["id"], "sequence": steps[-1]["sequence"] + 1})
+            "m_chapter_id": area["m_chapter_id"], "m_chapter_area_id": area["id"], "sequence": COMPLETED_SEQUENCE})
         for step in steps:
             if not step["m_chapter_quest_battle_id"]:
                 continue

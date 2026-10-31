@@ -35,6 +35,17 @@ def reopened_tables(tables, schema, rules, campaign_id=0):
     token_ids = {row["m_gacha_token_id"] for row in rows("m_gachas") if row.get("m_gacha_group_id") in gacha_ids and row.get("m_gacha_token_id")}
     campaign_terms = {row["m_mission_term_id"] for row in rows("m_encounter_campaigns")} if rules["event_open_all"] else set()
     campaigns = rows("m_encounter_campaigns")
+    recommend_ids = set()
+    if rows("m_payment_recommends"):
+        from .gameplay_catalog import GameplayCatalog
+        from .gameplay_recommendations import owner_context
+
+        catalog = GameplayCatalog(tables, schema)
+        for recommendation in catalog.rows("m_payment_recommends"):
+            owner = owner_context(catalog, recommendation)
+            if owner and (owner[0] == "event" and owner[1] in event_ids
+                          or owner[0] == "campaign" and rules["event_open_all"]):
+                recommend_ids.add(recommendation["id"])
     if rules["event_open_all"] and campaigns:
         campaign_id = campaign_id or campaigns[0]["id"]
         if campaign_id not in {row["id"] for row in campaigns}:
@@ -55,7 +66,8 @@ def reopened_tables(tables, schema, rules, campaign_id=0):
                         or name == "m_gacha_groups" and row["id"] in gacha_ids
                         or name == "m_gachas" and row.get("m_gacha_group_id") in gacha_ids
                         or name == "m_gacha_tokens" and row["id"] in token_ids
-                        or name == "m_encounter_campaigns" and rules["event_open_all"])
+                        or name == "m_encounter_campaigns" and rules["event_open_all"]
+                        or name == "m_payment_recommends" and row["id"] in recommend_ids)
             if not selected:
                 continue
             if result[name] is tables[name]:

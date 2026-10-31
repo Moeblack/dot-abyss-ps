@@ -14,6 +14,7 @@ from .gameplay_records import find, put, rows
 from .gameplay_routes import route
 from .gameplay_stamina import recovery_day
 from .gameplay_tavern_score import apply_card, draw_hand, score_turn
+from .gameplay_access import staff_registered
 
 
 def state(game):
@@ -46,6 +47,10 @@ def state(game):
         daily(game).update(day=int(cycle.strftime("%Y%m%d")), day_of_week=(cycle.weekday() + 1) % 7, worked_count=0,
                            selected_count=0, score=0, work_seed=0, selected_result="", use_ticket=0,
                            selected_cards={k: [] for k in ("selected_cards", "use_cards", "selected_character_cards", "use_character_cards")})
+    if data["active"] is None:
+        registered = {row["m_character_id"] for row in rows(game.state, "t_characters") if staff_registered(game, row)}
+        data["assignments"] = {key: [identifier if identifier in registered else 0 for identifier in members]
+                               for key, members in data["assignments"].items()}
     return data
 
 
@@ -84,7 +89,7 @@ def staff(game):
     result = []
     for character in rows(game.state, "t_characters"):
         level = intimacy_level(game, character)
-        if level >= game.rules["tavern_staff_intimacy_level"] or character["m_character_id"] == 1200002:
+        if staff_registered(game, character):
             result.append({"m_character_id": character["m_character_id"], "t_character_id": character["id"],
                            "job_level": max(1, level), "is_assign": int(character["m_character_id"] in assigned)})
     return result

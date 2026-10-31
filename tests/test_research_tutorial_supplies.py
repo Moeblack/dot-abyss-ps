@@ -6,12 +6,21 @@ from fastapi.testclient import TestClient
 
 from dotabyss_ps.app import create_app
 from dotabyss_ps.gameplay_catalog import GameplayError
+from dotabyss_ps.newgame import build_initial_state
 from test_gameplay import call, gameplay_master, setup_gameplay, snapshot
 from test_localstate import login
 from test_permanent_features import seed
 
 
 MATERIAL_IDS = (50001, 50004, 50007)
+
+
+@pytest.fixture(autouse=True)
+def legacy_profile(setup_gameplay):
+    context = setup_gameplay
+    context.store.game_state(context.identity["user_id"], context.record["revision"],
+                             lambda identity, name, created_at: build_initial_state(
+                                 context.tables, context.schema, identity, name, created_at, start_tutorial=False))
 
 
 def configure(context, *, unlocked=1, amount=100):
@@ -56,7 +65,7 @@ def test_supply_requires_early_unlock_enabled_amount_and_unfinished_tutorial(set
         call(c, "api/tutorial/feature-exec", {"tutorial_type": 9})
     configure(c, unlocked=unlocked, amount=amount)
     result = call(c, "api/user")
-    assert materials(result["records"]) == dict.fromkeys(MATERIAL_IDS, 0)
+    assert materials(result["records"]) == {50001: 0, 50004: 5 if unlocked else 0, 50007: 0}
     assert receipt(c) is None
 
 
@@ -91,6 +100,7 @@ def test_failed_supply_delivery_rolls_back_inventory_and_receipt(setup_gameplay,
 
     c = setup_gameplay
     configure(c)
+    before = snapshot(c)
     original_delivery = research.deliver
 
     def fail_after_delivery(game, rewards):
@@ -100,7 +110,7 @@ def test_failed_supply_delivery_rolls_back_inventory_and_receipt(setup_gameplay,
     with monkeypatch.context() as patch:
         patch.setattr(research, "deliver", fail_after_delivery)
         call(c, "api/user", expected=503)
-    assert snapshot(c) == (None, None)
+    assert snapshot(c) == before
     assert materials(call(c, "api/user")["records"]) == dict.fromkeys(MATERIAL_IDS, 100)
     assert receipt(c)["amount"] == 100
 

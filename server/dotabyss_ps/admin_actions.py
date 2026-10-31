@@ -195,6 +195,7 @@ def apply_action(game, action, args):
     from .gameplay_effects import settle_before_effect_change
     from .gameplay_idle import reconcile
     from .gameplay_skin_bonds import reconcile_skin_bonds
+    from .gameplay_access import reconcile_feature_rewards
     configured_rules = copy.deepcopy(game.rules)
     tutorial_mode = game.progress.get("features", {}).get("tutorial", {}).get("data", {}).get("mode")
     game.prepare()
@@ -210,6 +211,7 @@ def apply_action(game, action, args):
         game.prepare()
     reconcile(game, settle_pending=False)
     reconcile_skin_bonds(game)
+    reconcile_feature_rewards(game)
     ensure_abilities(game)
     ensure_equipment_appraisal(game)
     if "m_plan_restricts" in game.catalog.tables:

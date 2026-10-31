@@ -7,10 +7,10 @@ from datetime import timedelta
 
 from .gameplay_catalog import GameplayError, JST, available, identifiers, number
 from .gameplay_delivery import deliver
+from .gameplay_comeback import lineup_allowed
 from .gameplay_economy import consume, text_argument
 from .gameplay_exchange import period_key
 from .gameplay_login_state import login_data
-from .gameplay_plans import missions
 from .gameplay_receipts import feature_data
 from .gameplay_records import find, put, rows
 from .gameplay_routes import route
@@ -67,48 +67,15 @@ def ensure_vip_weekly_counters(game):
 
 
 def recommendation_eligible(game, definition):
-    kind, target, required = definition["condition_type"], definition["condition_id"], definition["condition_value"]
-    evaluator = missions(game)
-    if kind == 0:
-        return True
-    if kind == 3:
-        return any(r["limit_break_count"] >= required for r in rows(game.state, "t_characters"))
-    if kind == 4:
-        return find(game.state, "t_characters", m_character_id=target) is not None
-    if kind == 5:
-        return rows(game.state, "t_prologue_tutorials")[0]["status"] == target
-    if kind == 9:
-        ids = {r["m_mission_id"] for r in game.catalog.rows("m_special_mission_days") if r["m_special_mission_id"] == target}
-        return sum(f"once:{identifier}" in game.progress["mission_claims"] for identifier in ids) >= required
-    if kind == 20:
-        entry = find(game.state, "t_gachas", m_gacha_id=target)
-        return entry is not None and entry["exec_count"] >= required
-    if kind == 22:
-        return evaluator.completed(game.catalog.get("m_missions", target))
-    if kind in (14, 21):
-        return False
-    situation = {1: 20000, 6: 160000, 7: 170002, 8: 110001, 11: 210000, 12: 200000, 13: 100000,
-                 15: 110002, 16: 110003, 17: 110004, 18: 160100, 19: 110000, 23: 110001, 24: 110003}.get(kind)
-    if situation is None:
-        raise GameplayError("Unknown shop release condition", 503, 5036)
-    return (evaluator.value({"situation_type": situation, "target_id": target, "sub_target_id": 0, "mission_type": 1}) or 0) >= required
+    from .gameplay_recommendations import eligible
+
+    return eligible(game, definition)
 
 
 def recommendations(game):
-    data = shop_data(game)
-    result = []
-    for definition in game.catalog.rows("m_payment_recommends"):
-        if not available(definition, game.now):
-            continue
-        key = str(definition["id"])
-        if key not in data["released"] and recommendation_eligible(game, definition):
-            end = timestamp(definition["end_at"])
-            if definition["valid_minutes"] > 0:
-                end = min(end, game.now + timedelta(minutes=definition["valid_minutes"]))
-            data["released"][key] = end.isoformat()
-        if key in data["released"] and timestamp(data["released"][key]) > game.now:
-            result.append(definition)
-    return result
+    from .gameplay_recommendations import collect
+
+    return collect(game, shop_data(game))
 
 
 def count_entry(game, payment, kind=1):
@@ -176,6 +143,8 @@ def validate_purchase(game, identifier):
     kind, master_id = payment["payment_type"], payment["master_id"]
     if kind == 1:
         definition = payment_lineup(game, payment)
+        if not lineup_allowed(game, definition["id"]):
+            raise GameplayError("Shop product requires an active comeback entitlement")
         if not available(definition, game.now):
             raise GameplayError("Shop product is not active")
         current = lineup_payment(game, definition)
@@ -235,6 +204,8 @@ def listing(game, body):
     categories = {r["id"] for r in game.catalog.rows("m_payment_categories")}
     commons = []
     for definition in sorted(game.catalog.rows("m_payment_lineups"), key=lambda r: (r["display_order"], r["id"])):
+        if not lineup_allowed(game, definition["id"]):
+            continue
         if not available(definition, game.now) or definition["m_payment_category_id"] not in categories:
             continue
         payment = lineup_payment(game, definition)

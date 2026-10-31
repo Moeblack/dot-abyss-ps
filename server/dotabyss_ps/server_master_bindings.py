@@ -5,6 +5,8 @@ import hashlib
 from .masterdata import MasterDataError, canonical_json
 
 SERVER_TABLES = {
+    "m_feature_lock_rewards": ("id m_feature_lock_id content_type content_id amount", "3f87dd30f3923d19adc6f7973da1fedf210875a8bde6c28fc52f66215c5a118d"),
+    "m_event_speedrun_novel_restricts": ("id m_event_id m_novel_event_id restrict_type restrict_param_1 restrict_param_2", "68687fb710c9a869b8ba0e98db2591d7119445b10aaa45a767bb3836cdf55bb0"),
     "m_encounter_campaign_bonus_quests": ("id group_id m_encounter_quest_id bonus_quest_time_limit m_encounter_campaign_bonus_quest_appear_group_id", "da3c98b4f5a03d4a20a788dab79e286b3196b76b6966e53ef72094b3a470158f"),
     "m_encounter_campaign_bonus_quest_appears": ("id group_id m_encounter_quest_id", "2e5400936c85bfc872a3a59d0d0b1c368cba813d1528f04491b63ea0f08dd5ea"),
     "m_event_miners": ("id m_event_id initial_supply capacity_supply daily_recovery_supply", "a150401c727e838508116d76c74b586123f8bf6b1d2c4f5856500e28f5cd21c4"),

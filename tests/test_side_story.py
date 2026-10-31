@@ -10,14 +10,20 @@ from dotabyss_ps.app import create_app
 from dotabyss_ps.gameplay_battle_stages import build_stage
 from dotabyss_ps.gameplay_catalog import JST
 from dotabyss_ps.gameplay_missions import Missions
+from dotabyss_ps.gameplay_records import put
 from dotabyss_ps.gameplay_stamina import STAMINA_TYPE
 from test_battle_stages import assert_links, battle_catalog, game_for
 from test_gameplay import call, gameplay_master, setup_gameplay, snapshot
-from test_training_encounter_modes import active, clock, edit, prepare, records, table, victory
+from test_training_encounter_modes import active, clock, edit, prepare as prepare_party, records, table, victory
 
 STORY = 1022001
 FIRST = 102200101
 FINAL = 102200112
+
+
+def prepare(context, chapters=False):
+    prepare_party(context, chapters)
+    edit(context, lambda state, _: put(state, "t_feature_locks", {"m_feature_lock_id": 9}, {"is_unlocked": True}))
 
 
 def ordered_stages(context):

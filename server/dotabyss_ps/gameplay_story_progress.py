@@ -5,6 +5,7 @@ import re
 from .gameplay_catalog import GameplayError, number
 from .gameplay_receipts import feature_data
 from .gameplay_records import find, put, rows
+from .gameplay_story_state import COMPLETED_SEQUENCE, is_quest_complete
 
 
 def sequences(game, quest_id):
@@ -20,8 +21,7 @@ def sequences(game, quest_id):
 
 
 def completed(game, quest_id):
-    row = find(game.state, "t_chapter_quests", m_chapter_quest_id=quest_id)
-    return row is not None and row["sequence"] > sequences(game, quest_id)[-1]["sequence"]
+    return is_quest_complete(game.state, quest_id)
 
 
 def prepare_story_state(game):
@@ -36,8 +36,10 @@ def prepare_story_state(game):
                            if step["m_chapter_quest_battle_id"] and step["sequence"] < row["sequence"])
         data.update(legacy_completed_quests=complete, legacy_cleared_battles=battles, last_party_no=1, pending_releases={})
     data.setdefault("pending_releases", {})
-    if set(data) != {"legacy_completed_quests", "legacy_cleared_battles", "last_party_no", "pending_releases"}:
+    fields = {"legacy_completed_quests", "legacy_cleared_battles", "last_party_no", "pending_releases"}
+    if set(data) - {"completion_version"} != fields:
         raise GameplayError("Stored main-story progress is invalid")
+    number(data.get("completion_version", 0), 0, 1)
     if not isinstance(data["pending_releases"], dict) or len(data["pending_releases"]) > 10000:
         raise GameplayError("Stored pending story releases are invalid")
     for key, values in data["pending_releases"].items():
@@ -57,6 +59,15 @@ def prepare_story_state(game):
         if len(set(values)) != len(values):
             raise GameplayError("Stored main-story history contains duplicates")
     number(data["last_party_no"], 1, 10)
+    if not data.get("completion_version"):
+        claims = game.progress["features"].get("battle_rewards", {}).get("data", {}).get("quest_claims", {})
+        if not isinstance(claims, dict) or any(not re.fullmatch(r"[1-9][0-9]{0,18}", str(key)) for key in claims):
+            raise GameplayError("Stored main-story reward receipts are invalid")
+        confirmed = set(data["legacy_completed_quests"]) | {int(key) for key in claims}
+        for row in rows(game.state, "t_chapter_quests"):
+            if row["m_chapter_quest_id"] in confirmed and row["sequence"] > sequences(game, row["m_chapter_quest_id"])[-1]["sequence"]:
+                row["sequence"] = COMPLETED_SEQUENCE
+        data["completion_version"] = 1
     return data
 
 
@@ -140,7 +151,7 @@ def clear_quest(game, body, previous_available=None):
     pending = progress["pending_releases"].get(str(quest_id))
     before = (set(pending) if pending is not None else available_quests(game)) if previous_available is None else previous_available
     settle_before_effect_change(game)
-    row["sequence"] = last["sequence"] + 1
+    row["sequence"] = COMPLETED_SEQUENCE
     rewards = complete_quest(game, quest)
     progress["pending_releases"].pop(str(quest_id), None)
     reconcile(game, settle_pending=False)

@@ -9,6 +9,8 @@ from .gameplay_statistics import bucket, value as statistic_value
 from .gameplay_rules import load_rules
 from .gameplay_delivery import deliver
 from .gameplay_character_levels import effective_character_level
+from .gameplay_story_state import is_quest_complete
+from .gameplay_comeback import special_window
 
 TIME_SITUATIONS = {110200, 110201, 110202, 110500, 110600, 110700}
 COUNTER_SITUATIONS = {40300, 40400, 40500, 50000, 60000, 80000, 80002, 80003, 90000, 110000, 110001, 110002, 110003,
@@ -57,17 +59,10 @@ class Missions:
             return self.rules["local_platform_missions_complete"]
         if situation == 20000:
             if not target:
-                last_sequences = {}
-                for sequence in self.catalog.rows("m_chapter_quest_sequences"):
-                    identifier = sequence["m_chapter_quest_id"]
-                    last_sequences[identifier] = max(last_sequences.get(identifier, 0), sequence["sequence"])
-                completed = {quest["m_chapter_quest_id"] for quest in rows(self.state, "t_chapter_quests")
-                             if quest["m_chapter_quest_id"] in last_sequences
-                             and quest["sequence"] > last_sequences[quest["m_chapter_quest_id"]]}
+                completed = {quest["id"] for quest in self.catalog.rows("m_chapter_quests")
+                             if is_quest_complete(self.state, quest["id"])}
                 return len(completed) + (statistic_value(self.progress, self.now, mission, data=self.statistics) or 0)
-            quest = find(self.state, "t_chapter_quests", m_chapter_quest_id=target)
-            sequences = [r["sequence"] for r in self.catalog.rows("m_chapter_quest_sequences") if r["m_chapter_quest_id"] == target]
-            return int(quest is not None and bool(sequences) and quest["sequence"] > max(sequences))
+            return int(is_quest_complete(self.state, target))
         if situation in (260100, 270000):
             kind = "coaching" if situation == 260100 else "tryout"
             quest = find(self.state, f"t_{kind}_quests", **{f"m_{kind}_quest_id": target})
@@ -147,6 +142,9 @@ class Missions:
 
     def special(self, identifier):
         definition = self.catalog.get("m_special_missions", identifier)
+        eligible, comeback = special_window(self, identifier)
+        if not eligible:
+            raise GameplayError("Special mission requires an active comeback entitlement")
         if not available(definition, self.now):
             raise GameplayError("Special mission is not active")
         record = find(self.state, "t_special_missions", m_special_mission_id=identifier)
@@ -158,9 +156,19 @@ class Missions:
                     declared = parse_timestamp(end)
                     limit = min(limit, declared if declared.tzinfo else declared.replace(tzinfo=JST))
                 end = limit.isoformat()
+            if comeback is not None:
+                end = min(parse_timestamp(end), parse_timestamp(comeback["end_at"])).isoformat() if end else comeback["end_at"]
             record = put(self.state, "t_special_missions", {"m_special_mission_id": identifier}, {
                 "start_at": self.now.isoformat(), "end_at": end, "completed_at": "",
                 "created_at": self.now.strftime("%Y-%m-%d %H:%M:%S"), "updated_at": self.now.isoformat()}, self.user_id)
+        elif comeback is not None:
+            started = max(parse_timestamp(record["start_at"]), parse_timestamp(comeback["come_back_at"]))
+            end = parse_timestamp(comeback["end_at"])
+            if definition["end_at"]:
+                end = min(end, parse_timestamp(definition["end_at"]))
+            if definition["valid_day"]:
+                end = min(end, started + timedelta(days=definition["valid_day"]))
+            record.update(start_at=started.isoformat(), end_at=end.isoformat())
         return record, [r for r in self.catalog.rows("m_special_mission_days") if r["m_special_mission_id"] == identifier]
 
     def special_top(self, identifier):
@@ -177,6 +185,8 @@ class Missions:
                        if m["mission_type"] in (1, 2, 3) and not m.get("m_mission_pass_id"))
         special = []
         for record in rows(self.state, "t_special_missions"):
+            if not special_window(self, record["m_special_mission_id"])[0]:
+                continue
             if not available(record, self.now):
                 continue
             elapsed = (self.now.date() - date.fromisoformat(record["start_at"][:10])).days + 1

@@ -6,6 +6,7 @@ from .gameplay_catalog import GameplayError
 from .gameplay_event_records import EVENT_ROW_FIELDS
 
 OPTIONAL_ROW_FIELDS = {
+    "t_come_backs": {"long": "id user_id m_come_back_id", "string": "come_back_at end_at created_at updated_at"},
     **EVENT_ROW_FIELDS,
     "t_coaching_quests": {"long": "id user_id m_coaching_quest_id", "int": "status is_exempted"},
     "t_recollection_quests": {"long": "id user_id m_recollection_quest_id", "int": "status"},
@@ -115,6 +116,21 @@ def delta(before, after):
         if up or down:
             result[table] = {"up": up, "down": down}
     return result
+
+
+def merge_changes(records, changes):
+    for table, change in changes.items():
+        field = identity_field(table)
+        current = records.setdefault(table, {"up": [], "down": []})
+        updated = {row[field]: row for row in current["up"]}
+        removed = set(current["down"])
+        for identifier in change["down"]:
+            updated.pop(identifier, None)
+            removed.add(identifier)
+        for row in change["up"]:
+            updated[row[field]] = copy.deepcopy(row)
+            removed.discard(row[field])
+        current.update(up=list(updated.values()), down=sorted(removed))
 
 
 def validate_optional_records(state):

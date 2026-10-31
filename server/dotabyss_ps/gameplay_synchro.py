@@ -4,6 +4,7 @@ from .gameplay_catalog import GameplayError, number
 from .gameplay_economy import consume
 from .gameplay_records import put, rows
 from .gameplay_routes import route
+from .gameplay_character_levels import synchronization_unlocked
 
 
 def ensure_synchro(game):
@@ -22,6 +23,8 @@ def definition(game, record):
 
 
 def level_up(game, body):
+    if not synchronization_unlocked(game):
+        raise GameplayError("Synchronization research has not been unlocked")
     record = ensure_synchro(game)
     master = definition(game, record)
     count = number(body["exec_count"], 1, 1000)
@@ -37,6 +40,8 @@ def level_up(game, body):
 
 
 def upgrade(game, body):
+    if not synchronization_unlocked(game):
+        raise GameplayError("Synchronization research has not been unlocked")
     record = ensure_synchro(game)
     current = definition(game, record)
     target = next((r for r in game.catalog.rows("m_level_synchros") if r["grade"] == current["grade"] + 1), None)

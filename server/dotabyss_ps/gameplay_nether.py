@@ -17,11 +17,15 @@ from .gameplay_nether_party import snapshot_party
 from .gameplay_nether_configuration import capture_configuration, frozen_nether
 from .gameplay_nether_missions import mission_list, mission_receive
 from .gameplay_nether_state import POINT_FIELDS, clear_items, day, ensure, entry_multiplier, floor_key, generate_map, held_items, hp_view, point_view, record, restrictions, reveal_routes, run, scope, selected_floor, state
+from .gameplay_access import require_feature
 
 
 @frozen_nether
 def listing(game, body):
-    data, current = state(game), ensure(game)
+    data = state(game)
+    if data["run"] is None or data["run"]["settled"]:
+        require_feature(game, 5)
+    current = ensure(game)
     expedition = data["run"]
     reveal_routes(game)
     stamina = settle_stamina(game.state, game.catalog, game.user_id, game.now)
@@ -50,6 +54,7 @@ def pay_entry(game, count):
 
 @frozen_nether
 def start(game, body):
+    require_feature(game, 5)
     definition, selected = scope(game, body["m_nether_id"], body["m_nether_map_id"], active=True)
     current, data = ensure(game), state(game)
     if data["run"] and not data["run"]["settled"]:

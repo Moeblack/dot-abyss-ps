@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from .gameplay_catalog import GameplayError, JST, available, identifiers, number
 from .gameplay_missions import Missions
-from .gameplay_records import delta, find, grant, put, rows
+from .gameplay_records import delta, find, grant, merge_changes, put, rows
 from .newgame import POLICY_VERSION, NewGameError, validate_saved_state
 from .protocol import validate_data
 from .storage import GameStateError
@@ -66,6 +66,8 @@ from .gameplay_encounter_campaign import ENCOUNTER_CAMPAIGN_ROUTES
 from .gameplay_event_missions import EVENT_MISSION_ROUTES, receivable_events, replay_response as replay_event_mission_response
 from .gameplay_story_progress import prepare_story_state, quest_row, update_sequence
 from .gameplay_tutorial import apply_tutorial_policy, complete_feature_tutorial, unlock_feature
+from .gameplay_comeback import reconcile_comeback
+from .gameplay_access import reconcile_feature_rewards
 
 EXTRA_ROUTES = {**PROFILE_ROUTES, **CHARACTER_ROUTES, **EQUIPMENT_ROUTES, **PRESENT_ROUTES, **GACHA_ROUTES,
                 **EXCHANGE_ROUTES, **ITEM_ROUTES, **RESEARCH_ROUTES, **LIBRARY_ROUTES, **PARTY_ROUTES, **PARTY_EDIT_ROUTES,
@@ -172,6 +174,7 @@ class Gameplay:
             raise GameStateError("Stored game state does not belong to the authenticated profile")
         prepare_progress(self.progress, self.now)
         apply_tutorial_policy(self)
+        reconcile_comeback(self)
         prepare_story_state(self)
         ensure_abilities(self)
         reconcile_skin_bonds(self)
@@ -196,6 +199,7 @@ class Gameplay:
             for identifier in (1, 2, 6, 7, 8):
                 self.catalog.get("m_feature_locks", identifier)
                 put(self.state, "t_feature_locks", {"m_feature_lock_id": identifier}, {"is_unlocked": True})
+        reconcile_feature_rewards(self)
         presents(self)
         if "m_disaster_levels" in self.catalog.tables:
             prepare_disaster(self)
@@ -243,14 +247,17 @@ class Gameplay:
             raise GameplayError(BLOCKED_ROUTES[route], 501, 5010)
         if not isinstance(body, dict):
             raise GameplayError("Request body must be an object", 400, 4007)
+        before = copy.deepcopy(self.state.get("records")) if isinstance(self.state, dict) else None
         self.prepare()
-        before = copy.deepcopy(self.state["records"])
+        if before is None:
+            before = copy.deepcopy(self.state["records"])
         expire_paid_lots(self)
         expired = delta(before, self.state["records"]).get("t_payment_dmm_currencies")
         digest = operation_digest(route, method, body)
         previous = replay(self.progress, operation_id, digest)
         if previous is not None:
             previous = refresh_replay_records(self.state, previous)
+            merge_changes(previous.setdefault("records", {}), delta(before, self.state["records"]))
             previous = replay_battle_response(self, route, previous)
             previous = replay_side_story_response(self, route, previous)
             previous = replay_event_mission_response(self, route, previous)
@@ -284,6 +291,7 @@ class Gameplay:
             if set(body) != fields:
                 raise GameplayError("Request fields do not match the endpoint", 400, 4007)
             result = handler(body)
+        reconcile_feature_rewards(self)
         reconcile(self, settle_pending=False)
         reconcile_skin_bonds(self)
         record_operation(self, route, body, before, result)

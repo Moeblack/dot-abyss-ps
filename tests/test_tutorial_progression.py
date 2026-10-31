@@ -182,7 +182,7 @@ def test_main_story_unlock_conditions_follow_quest_sequence_and_staff(setup_game
     mutate(c, completed_battle)
     call(c, "api/feature-lock/unlock", {"m_feature_lock_id": 8})
     call(c, "api/feature-lock/unlock", {"m_feature_lock_id": 2}, expected=409)
-    mutate(c, lambda state, progress: state["records"]["t_chapter_quests"]["up"][0].update(sequence=4))
+    mutate(c, lambda state, progress: state["records"]["t_chapter_quests"]["up"][0].update(sequence=99))
     call(c, "api/feature-lock/unlock", {"m_feature_lock_id": 2})
 
     def staff_registered(state, progress):

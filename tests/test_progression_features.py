@@ -103,6 +103,8 @@ def test_plan_claim_advances_step_and_unlocks_research_without_double_reward(set
 def test_sync_levels_use_full_cost_schedule_and_grade_limits(setup_gameplay):
     c = setup_gameplay
     seed(c, gold=100000000, character_exp=100000000, items={180001: 100000, 51003: 1})
+    update(c, lambda state, _: put(state, "t_building_skills", {"m_building_id": 300, "skill_type": 11001},
+                                  {"skill_level": 1, "checked_skill_level": 0}, c.identity["user_id"]))
     assert records(c)["t_level_synchros"]["up"][0]["level"] == 30
     headers = {**c.headers, "x-request-id": "sync-up"}
     body = {"exec_count": 2}

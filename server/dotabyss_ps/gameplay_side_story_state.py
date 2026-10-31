@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .gameplay_catalog import GameplayError, available, identifiers, number
 from .gameplay_receipts import feature_data
+from .gameplay_access import feature_available, require_feature
 
 
 def progress(game):
@@ -47,6 +48,8 @@ def writable_stage(data, stage_id):
 
 
 def story_open(game, story):
+    if not feature_available(game, 9):
+        return False
     if not available(story, game.now, "open_at", "close_at"):
         return False
     group = story["restrict_group_id"]
@@ -56,6 +59,7 @@ def story_open(game, story):
 
 
 def require_story(game, story_id):
+    require_feature(game, 9)
     story = game.catalog.get("m_side_stories", number(story_id))
     if not story_open(game, story):
         raise GameplayError("Side story is not open")

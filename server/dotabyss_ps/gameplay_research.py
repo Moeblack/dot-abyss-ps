@@ -24,24 +24,42 @@ def ensure_research_rewards(game):
         deliver(game, rewards)
 
 
-def ensure_tutorial_supplies(game):
+def tutorial_supply_receipt(game):
     data = game.progress["features"].get("research", {}).get("data", {})
-    if "tutorial_supplies" in data:
-        receipt = data["tutorial_supplies"]
-        if not isinstance(receipt, dict) or set(receipt) != {"amount", "granted_at"}:
-            raise GameplayError("Stored research tutorial supplies are invalid")
-        number(receipt["amount"], 1, 999999)
-        try:
-            parse_timestamp(receipt["granted_at"])
-        except (ValueError, TypeError) as error:
-            raise GameplayError("Stored research tutorial supply date is invalid") from error
+    if "tutorial_supplies" not in data:
+        return None
+    receipt = data["tutorial_supplies"]
+    if (not isinstance(receipt, dict) or not {"amount", "granted_at"} <= set(receipt)
+            or set(receipt) - {"amount", "granted_at", "feature_reward_bone_credit"}):
+        raise GameplayError("Stored research tutorial supplies are invalid")
+    amount = number(receipt["amount"], 1, 999999)
+    number(receipt.get("feature_reward_bone_credit", 0), 0, amount)
+    if not isinstance(receipt["granted_at"], str):
+        raise GameplayError("Stored research tutorial supply date is invalid")
+    try:
+        parse_timestamp(receipt["granted_at"])
+    except (ValueError, TypeError) as error:
+        raise GameplayError("Stored research tutorial supply date is invalid") from error
+    return receipt
+
+
+def ensure_tutorial_supplies(game):
+    from .gameplay_access import reward_claims
+
+    if tutorial_supply_receipt(game) is not None:
         return
     amount = game.rules["research_tutorial_material_amount"]
     completed = any(row["completed_flags"] & RESEARCH_TUTORIAL_MASK for row in rows(game.state, "t_feature_tutorials"))
     if not game.rules["unlock_common_features"] or not amount or completed:
         return
-    deliver(game, [{"content_type": 30, "content_id": identifier, "amount": amount} for identifier in TUTORIAL_MATERIAL_IDS])
-    feature_data(game, "research")["tutorial_supplies"] = {"amount": amount, "granted_at": game.now.isoformat()}
+    claims = reward_claims(game).values() if "feature_unlock" in game.progress["features"] else ()
+    bone_credit = min(amount, sum(claim["granted_amount"] for claim in claims
+                                  if claim["m_feature_lock_id"] == 1 and claim["content_type"] == 30 and claim["content_id"] == 50004))
+    rewards = [{"content_type": 30, "content_id": identifier, "amount": amount - (bone_credit if identifier == 50004 else 0)}
+               for identifier in TUTORIAL_MATERIAL_IDS]
+    deliver(game, [reward for reward in rewards if reward["amount"]])
+    feature_data(game, "research")["tutorial_supplies"] = {
+        "amount": amount, "granted_at": game.now.isoformat(), "feature_reward_bone_credit": bone_credit}
 
 
 def building(game, identifier):

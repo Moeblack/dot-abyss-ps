@@ -143,6 +143,19 @@ def release_novels(game, kind, event):
             elif novel["restrict_type"] != 0:
                 raise GameplayError("Unsupported event novel release condition", 503, 5036)
             expose_novel(game, novel["m_novel_event_id"])
+    elif kind.name == "speedrun" and "m_event_speedrun_novel_restricts" in game.catalog.tables:
+        for rule in game.catalog.rows("m_event_speedrun_novel_restricts"):
+            if rule["m_event_id"] != event["id"]:
+                continue
+            if rule["restrict_type"] != 1 or rule["restrict_param_2"] != 0:
+                raise GameplayError("Unsupported speedrun novel release condition", 503, 5036)
+            target = game.catalog.get(kind.nodes, rule["restrict_param_1"])
+            novel = game.catalog.get("m_novel_events", rule["m_novel_event_id"])
+            if target["m_event_id"] != event["id"] or novel["m_event_id"] != event["id"]:
+                raise GameplayError("Speedrun novel release refers to another event", 503, 5036)
+            record = node_record(game, kind, target["id"])
+            if record is not None and record["status"] == 99 and event_available(game, event["id"], novel):
+                expose_novel(game, novel["id"])
     return sorted({row["m_novel_event_id"] for row in rows(game.state, "t_novel_events")} - before)
 
 

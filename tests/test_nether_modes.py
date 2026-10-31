@@ -25,8 +25,13 @@ def nether(context):
     return state(context)["records"]["t_nethers"]["up"][0]
 
 
-def start(context):
+def unlock_nether(context):
     call(context, "api/user")
+    mutate(context, lambda state, _: put(state, "t_feature_locks", {"m_feature_lock_id": 5}, {"is_unlocked": True}))
+
+
+def start(context):
+    unlock_nether(context)
     call(context, "api/party/exploration/edit", party_body())
     return call(context, "api/nether/start", {"m_nether_id": 1, "m_nether_map_id": 1, "party_no": 1,
                                               "use_ticket": 0, "start_floor_level": 1})
@@ -74,6 +79,7 @@ def clear_codes(context):
 
 def test_nether_listing_start_frozen_party_battle_restore_and_return(setup_gameplay):
     context = setup_gameplay
+    unlock_nether(context)
     listing = call(context, "api/nether")
     assert listing["party_detail"] is None
     initial = start(context)
@@ -155,6 +161,7 @@ def test_nether_shop_purchases_are_bound_to_floor_and_stock(setup_gameplay):
 
 def test_nether_sphere_upgrade_costs_and_stale_level_rollback(setup_gameplay):
     context = setup_gameplay
+    unlock_nether(context)
     call(context, "api/nether")
     catalog = GameplayCatalog(context.tables, context.schema)
     sphere = next(row for row in catalog.rows("m_nether_spheres") if row["type"] == 1 and row["level"] == 1)
@@ -198,6 +205,7 @@ def test_nether_skip_ticket_consumption_and_code_draws(setup_gameplay, rare):
 
 def test_nether_loop_stamina_mission_uses_actual_stamina_and_receipts(setup_gameplay):
     context = setup_gameplay
+    unlock_nether(context)
     call(context, "api/nether")
     mutate(context, lambda _, p: p["features"]["statistics"]["data"]["totals"].update({"130001:0:0": 1200}))
     body = {"m_mission_ids": [93000001]}

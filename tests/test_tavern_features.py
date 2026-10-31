@@ -6,9 +6,13 @@ import pytest
 from dotabyss_ps.gameplay_catalog import GameplayCatalog
 from test_gameplay import NOW, call, gameplay_master, setup_gameplay, snapshot
 from test_permanent_features import records, seed
+from test_economy_features import update
 
 
 def configure(context):
+    call(context, "api/user")
+    update(context, lambda state, _: next(row for row in state["records"]["t_characters"]["up"]
+                                         if row["m_character_id"] == 1200002).update(intimacy_point=50))
     result = call(context, "api/tavern")
     identifier = result["tavern_daily_cards"][0]["id"]
     call(context, "api/tavern/set/characters", {"set_info": [{"m_tavern_work_id": 100, "m_character_id": 1200002}]})

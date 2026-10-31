@@ -285,6 +285,9 @@ def shop_history(game):
 
 @frozen_nether
 def upgrade_sphere(game, body):
+    from .gameplay_access import require_feature
+
+    require_feature(game, 5)
     current = record(game, body["m_nether_id"], body["m_nether_map_id"])
     definition = game.catalog.get("m_nether_spheres", number(body["m_nether_sphere_id"]))
     board_id = number(body["m_nether_sphere_board_id"])
