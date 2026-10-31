@@ -59,11 +59,11 @@ internal static class PaymentPatches
                 try
                 {
                     var response = awaiter.GetResult() ?? throw new InvalidDataException("Local purchase returned no result.");
-                    var items = response.received_items;
-                    var converted = new Il2CppReferenceArray<AppPaymentResultModel>(items?.Length ?? 0);
+                    var items = PaymentResultProjection.ForDisplay(response.received_items, item => item.content_type);
+                    var converted = new Il2CppReferenceArray<AppPaymentResultModel>(items.Length);
                     for (var index = 0; index < converted.Length; index++)
                     {
-                        var item = items![index];
+                        var item = items[index];
                         converted[index] = new AppPaymentResultModel { ContentType = item.content_type, ContentId = item.content_id, Amount = item.amount };
                     }
                     var model = new AppPaymentCompleteModel { Results = converted, GachaExecResponseEntity = response.exec_response };
