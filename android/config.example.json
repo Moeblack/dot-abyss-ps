@@ -1,0 +1,12 @@
+{
+  "Enabled": true,
+  "ObserveOnly": false,
+  "AllowFarTrampolines": false,
+  "StandaloneNativeLoginProbe": false,
+  "ServerBaseUrl": "http://127.0.0.1:18081",
+  "Profile": "default",
+  "IgnoreVersionChecks": false,
+  "LogProtocolShapes": true,
+  "CaptureRedactedResponses": false,
+  "TimeoutSeconds": 8
+}

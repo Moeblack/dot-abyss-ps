@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>DotAbyss.Observer.NativeProbe</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ClientDir Condition="'$(ClientDir)' == ''">$(MSBuildProjectDirectory)\..\..\..\dotabyss_pc\toolchain\runtime</ClientDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="..\src\NativePayloadDecoder.cs" Link="NativePayloadDecoder.cs" />
+    <Compile Include="..\src\RequestIdentity.cs" Link="RequestIdentity.cs" />
+    <ProjectReference Include="..\Core\DotAbyss.Observer.Core.csproj" />
+    <Reference Include="$(ClientDir)\BepInEx\core\*.dll" Exclude="$(ClientDir)\BepInEx\core\dobby.dll" Private="false" />
+    <Reference Include="$(ClientDir)\BepInEx\interop\*.dll" Private="false" />
+  </ItemGroup>
+</Project>

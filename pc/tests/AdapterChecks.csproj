@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\src\LocalOptions.cs" Link="LocalOptions.cs" />
+    <Compile Include="..\src\TransportPolicy.cs" Link="TransportPolicy.cs" />
+    <Compile Include="..\src\LocalSession.cs" Link="LocalSession.cs" />
+    <Compile Include="..\src\AdminSyncProtocol.cs" Link="AdminSyncProtocol.cs" />
+    <Compile Include="..\src\CharacterLevelProjection.cs" Link="CharacterLevelProjection.cs" />
+    <Compile Include="..\src\ClientIdentity.cs" Link="ClientIdentity.cs" />
+    <Compile Include="..\src\ExceptionFrames.cs" Link="ExceptionFrames.cs" />
+    <Compile Include="..\src\LoopbackProxyPolicy.cs" Link="LoopbackProxyPolicy.cs" />
+    <Compile Include="..\src\OperationIdentities.cs" Link="OperationIdentities.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,153 @@
+{
+  "format_version": 1,
+  "release": "pc-1.15.0-d38f026a",
+  "application_version": "1.15.0",
+  "launcher_product_id": "dotabyss_x_cl",
+  "executable": "ドットアビスX.exe",
+  "app_info": "ドットアビスX_Data/app.info",
+  "identity": {
+    "company": "LocalGames",
+    "product": "DotAbyssLocalPlayer"
+  },
+  "source_fingerprints": {
+    "baselib.dll": "d393eeab49a372ef543dbeeeb3d08cff10706ae4725c45462c288c4abfb21be2",
+    "GameAssembly.dll": "d32ffc1e7940265e3e3952339f6cc53c190d13923edd8e275705b046a0e1b4bd",
+    "UnityCrashHandler64.exe": "dc98e87494092420ac7ad6b1d3af0a539ac38e4307b76968b22434b20f57035b",
+    "UnityPlayer.dll": "d935627d3ac843293f1c51ee9d85538191f0cb98def4271c1a29302b52a021d4",
+    "ドットアビスX.exe": "7a3303bb9c358d9ec1b9ba9b48b04edf1ef2b2571c6aa140694b026e1652bd6d",
+    "D3D12/D3D12Core.dll": "625bd40005b1c3708695d5256ecf230d278e6b8edba5a88af70f3d91324f3052",
+    "ドットアビスX_Data/app.info": "ee7fbbf3858293da770995132aef65e61a971ab975f89c877b4580c9881c747b",
+    "ドットアビスX_Data/boot.config": "a3c1f57483317813eed0161875d74945fb2fa1db5167c13f92a87dbff332355a",
+    "ドットアビスX_Data/globalgamemanagers": "97738fcede2ae1628a978f00b2b41e098217c0214db91c329e274a88cf6cc30b",
+    "ドットアビスX_Data/globalgamemanagers.assets": "ca35be23559932af58e5eb43f67b7af72a575bb24d1c848df2b6f9895a54fba6",
+    "ドットアビスX_Data/globalgamemanagers.assets.resS": "662587a856f69262a5f9503e1e48b478ec934e2769c8c6762de7886f8dd85734",
+    "ドットアビスX_Data/level0": "f80f1ea332a84dc3bdcab3ed1318c62ff1209f7ef0ddce5a8b5aa643bd08a9c8",
+    "ドットアビスX_Data/level1": "61c2a8d735c430f27c233f23b7b581be47ff712f1171ba4194e6da0296ec75d5",
+    "ドットアビスX_Data/level2": "70cd9f02ac251a2861098618cfb2c52e43317589c8fdbe0b5f219471ef27c727",
+    "ドットアビスX_Data/level3": "5eb788dd0d0c6b849d5bbca569d97407f6bffc33d2c2cac9df5853c2f77b2f77",
+    "ドットアビスX_Data/level4": "831e4b3c459e7cd782fa60f1575f29884af12f19cf00fc212d3d18e05e2affdf",
+    "ドットアビスX_Data/resources.assets": "29da936d4b512eb0fe3cd7bde66aec1eaa810f55aa93805bcb3cabbacc24d835",
+    "ドットアビスX_Data/resources.assets.resS": "2b7a15361a4117ec55bfd06385b1baa43359caf3a5a6821e98cdb9a521bca1cd",
+    "ドットアビスX_Data/RuntimeInitializeOnLoads.json": "318383ac4afda29328216700efd73300e697550cd4661bd80d23d72f62209982",
+    "ドットアビスX_Data/ScriptingAssemblies.json": "e3f4632eb26ca8c51003b41d8641597573a0c3b3bcb55712a4259940abcac9f8",
+    "ドットアビスX_Data/sharedassets0.assets": "385d65198e7523c62d7b67ed44bbb5e2b0b0182f6b3c494e22292d9ef0a32f9d",
+    "ドットアビスX_Data/sharedassets1.assets": "02efa4d4475b4cae411c68965ec522b204888dd32d30df644ba91b21a9cd5d96",
+    "ドットアビスX_Data/sharedassets2.assets": "d8304f695c567a97ab3af4356fdfc955f4d7e9af8f1e591aba531066167d6ef1",
+    "ドットアビスX_Data/sharedassets3.assets": "49f9bf27b025596e6b49d57a1108a43a8d75e098c650e6e75686e6d618018b39",
+    "ドットアビスX_Data/sharedassets4.assets": "713df5aca52dde6721906e9ced5e4ffa70ac3b7f72f645a822fcb215c5275d35",
+    "ドットアビスX_Data/sharedassets4.assets.resS": "8fd5aa559be0f1225793f87f45529657a36e5b8e31636ab18e965aa128ca246a",
+    "ドットアビスX_Data/Plugins/no_plugins_were_generated.txt": "1e74a17681a2a73f1af10c8bd74426d22d842966d147f81da30bc9200cfd4e6b",
+    "ドットアビスX_Data/Resources/unity default resources": "0f926eca5a119ba2c41320348b29b8ddf4d59242cdf43d40a4c77f3044eecf8f",
+    "ドットアビスX_Data/Resources/unity_builtin_extra": "766ecf3b1a2cdd6173e2fafa45cb1adcc1752a6cfa0e9cb653491660d4ff06e0",
+    "ドットアビスX_Data/StreamingAssets/google-services-desktop.json": "38c338f9b94143cabb13e01e780a55d426baef8761f37f28967c984e1052ac20",
+    "ドットアビスX_Data/StreamingAssets/UnityServicesProjectConfiguration.json": "84c39e622f2702cd45cf50ff5cd1242389b1bdf02520acad3ea4e3ac14f778f4",
+    "ドットアビスX_Data/il2cpp_data/Metadata/global-metadata.dat": "d38f026a769e522b136830785ad2789f834c47127be764f89ab294b4d91f056d",
+    "ドットアビスX_Data/il2cpp_data/Resources/mscorlib.dll-resources.dat": "c5baa176a5b72cd545266340e42102d393a5e43d38c95796bc828918bb95277f",
+    "ドットアビスX_Data/il2cpp_data/Resources/Newtonsoft.Json.dll-resources.dat": "531de49e73ddea25554c9f656f54da2a665946f3fec57048e0cfe3b9e49b03f8",
+    "ドットアビスX_Data/il2cpp_data/Resources/System.Collections.Immutable.dll-resources.dat": "6fcf90f3020066640061632210960ceec731265abb922315da893978e37c4e72",
+    "ドットアビスX_Data/il2cpp_data/Resources/System.Data.dll-resources.dat": "98a7950ec6de3242c2e190dfa630188dfa32511a125542b94baa952d1c757d49",
+    "ドットアビスX_Data/il2cpp_data/Resources/System.Drawing.dll-resources.dat": "7c33aa707bc3fdc83991b81a97d6fc622b140762a767300f08f616c2c0a91255",
+    "ドットアビスX_Data/Plugins/x86_64/cri_mana_vpx.dll": "e58fbb0783a851c9956396a46616ff8e8485b7a6803da91c66602683d9e93055",
+    "ドットアビスX_Data/Plugins/x86_64/cri_ware_unity.dll": "3ec1e142e1deffaed37e80b888826dc4a3065852d2ac469ab79adc85b3f7cf7a",
+    "ドットアビスX_Data/Plugins/x86_64/FirebaseCppAnalytics.dll": "a72282c23799c584979de0dc841ad12f413efc4c5338694f335cb23cff07c3cb",
+    "ドットアビスX_Data/Plugins/x86_64/FirebaseCppApp-13_9_0.dll": "b38ef7b85c4ad64a1910ef59c6371e4bd7c4ceeb239c4b4ce982467619feeedd",
+    "ドットアビスX_Data/Plugins/x86_64/FirebaseCppMessaging.dll": "88af894044e09bf8fb7ac45a2aa4c1d458fc3f56e5c3d5ba51dcf86b23b3e8a3",
+    "ドットアビスX_Data/Plugins/x86_64/Live2DCubismCore.dll": "c4599835b0349fcae774cedc6dbd0057743fa503d4cc0af8f9022ca3dd845634",
+    "ドットアビスX_Data/StreamingAssets/CriStreamingData/abyss_pv_release.usm0752992b3f0733406c48a417e3b73583": "33bbc71b39deba9b4e14c99178a2bda6866a3d90bf48b65ab139499220627042"
+  },
+  "settings": {
+    "path": "ドットアビスX_Data/globalgamemanagers",
+    "sha256": "97738fcede2ae1628a978f00b2b41e098217c0214db91c329e274a88cf6cc30b",
+    "string_changes": [
+      {
+        "field": "companyName",
+        "offset": 1300,
+        "before": "EXNOA LLC.",
+        "after": "LocalGames"
+      },
+      {
+        "field": "productName",
+        "offset": 1316,
+        "before": "ドットアビスX",
+        "after": "DotAbyssLocalPlayer"
+      }
+    ],
+    "integer_changes": [
+      {
+        "field": "insecureHttpOption",
+        "offset": 2168,
+        "before": 0,
+        "after": 2
+      }
+    ]
+  },
+  "profile_seeds": [
+    {
+      "source": "C:\\Users\\YourName\\AppData\\LocalLow\\EXNOA LLC_\\ドットアビスX\\com.unity.addressables\\1791059991.bin",
+      "relative": "com.unity.addressables/1791059991.bin",
+      "sha256": "2ae3d88442c7c081bcf9c48a98a4afbe8d460fb6fba570e35ff6461a4f949036"
+    },
+    {
+      "source": "C:\\Users\\YourName\\AppData\\LocalLow\\EXNOA LLC_\\ドットアビスX\\com.unity.addressables\\1791059991.hash",
+      "relative": "com.unity.addressables/1791059991.hash",
+      "sha256": "813697fc2036c65c94e7dcc3c516bb0c9055d326d8d958f5d3a66e6d23c8725d"
+    },
+    {
+      "source": "C:\\Users\\YourName\\AppData\\LocalLow\\EXNOA LLC_\\ドットアビスX\\DownloadCache\\b0309c2fc3389ac234aab4ca138373f2.dat",
+      "relative": "DownloadCache/b0309c2fc3389ac234aab4ca138373f2.dat",
+      "sha256": "ee9f68157917ee9601c539f950aaf98ae9b446a54dac66707bc297746efac523"
+    }
+  ],
+  "updates": {
+    "activation": "explicit verified release only",
+    "user_overrides": "separate from immutable master payload",
+    "save_migration": "explicit versioned migration before activation",
+    "unimplemented_event_logic": "unsupported; never synthesized success"
+  },
+  "prepared_fingerprints": {
+    "baselib.dll": "d393eeab49a372ef543dbeeeb3d08cff10706ae4725c45462c288c4abfb21be2",
+    "GameAssembly.dll": "d32ffc1e7940265e3e3952339f6cc53c190d13923edd8e275705b046a0e1b4bd",
+    "UnityCrashHandler64.exe": "dc98e87494092420ac7ad6b1d3af0a539ac38e4307b76968b22434b20f57035b",
+    "UnityPlayer.dll": "d935627d3ac843293f1c51ee9d85538191f0cb98def4271c1a29302b52a021d4",
+    "ドットアビスX.exe": "7a3303bb9c358d9ec1b9ba9b48b04edf1ef2b2571c6aa140694b026e1652bd6d",
+    "D3D12/D3D12Core.dll": "625bd40005b1c3708695d5256ecf230d278e6b8edba5a88af70f3d91324f3052",
+    "ドットアビスX_Data/app.info": "61a856b5be4c9673c492a1993d37f3bea08132b1c6bcf32b1a4c1b033a15196d",
+    "ドットアビスX_Data/boot.config": "a3c1f57483317813eed0161875d74945fb2fa1db5167c13f92a87dbff332355a",
+    "ドットアビスX_Data/globalgamemanagers": "e32a51da7fd1607dbf9d13bf24592ec2ebab5cc426b7886dbe769a6bc32f53e9",
+    "ドットアビスX_Data/globalgamemanagers.assets": "ca35be23559932af58e5eb43f67b7af72a575bb24d1c848df2b6f9895a54fba6",
+    "ドットアビスX_Data/globalgamemanagers.assets.resS": "662587a856f69262a5f9503e1e48b478ec934e2769c8c6762de7886f8dd85734",
+    "ドットアビスX_Data/level0": "f80f1ea332a84dc3bdcab3ed1318c62ff1209f7ef0ddce5a8b5aa643bd08a9c8",
+    "ドットアビスX_Data/level1": "61c2a8d735c430f27c233f23b7b581be47ff712f1171ba4194e6da0296ec75d5",
+    "ドットアビスX_Data/level2": "70cd9f02ac251a2861098618cfb2c52e43317589c8fdbe0b5f219471ef27c727",
+    "ドットアビスX_Data/level3": "5eb788dd0d0c6b849d5bbca569d97407f6bffc33d2c2cac9df5853c2f77b2f77",
+    "ドットアビスX_Data/level4": "831e4b3c459e7cd782fa60f1575f29884af12f19cf00fc212d3d18e05e2affdf",
+    "ドットアビスX_Data/resources.assets": "29da936d4b512eb0fe3cd7bde66aec1eaa810f55aa93805bcb3cabbacc24d835",
+    "ドットアビスX_Data/resources.assets.resS": "2b7a15361a4117ec55bfd06385b1baa43359caf3a5a6821e98cdb9a521bca1cd",
+    "ドットアビスX_Data/RuntimeInitializeOnLoads.json": "318383ac4afda29328216700efd73300e697550cd4661bd80d23d72f62209982",
+    "ドットアビスX_Data/ScriptingAssemblies.json": "e3f4632eb26ca8c51003b41d8641597573a0c3b3bcb55712a4259940abcac9f8",
+    "ドットアビスX_Data/sharedassets0.assets": "385d65198e7523c62d7b67ed44bbb5e2b0b0182f6b3c494e22292d9ef0a32f9d",
+    "ドットアビスX_Data/sharedassets1.assets": "02efa4d4475b4cae411c68965ec522b204888dd32d30df644ba91b21a9cd5d96",
+    "ドットアビスX_Data/sharedassets2.assets": "d8304f695c567a97ab3af4356fdfc955f4d7e9af8f1e591aba531066167d6ef1",
+    "ドットアビスX_Data/sharedassets3.assets": "49f9bf27b025596e6b49d57a1108a43a8d75e098c650e6e75686e6d618018b39",
+    "ドットアビスX_Data/sharedassets4.assets": "713df5aca52dde6721906e9ced5e4ffa70ac3b7f72f645a822fcb215c5275d35",
+    "ドットアビスX_Data/sharedassets4.assets.resS": "8fd5aa559be0f1225793f87f45529657a36e5b8e31636ab18e965aa128ca246a",
+    "ドットアビスX_Data/Plugins/no_plugins_were_generated.txt": "1e74a17681a2a73f1af10c8bd74426d22d842966d147f81da30bc9200cfd4e6b",
+    "ドットアビスX_Data/Resources/unity default resources": "0f926eca5a119ba2c41320348b29b8ddf4d59242cdf43d40a4c77f3044eecf8f",
+    "ドットアビスX_Data/Resources/unity_builtin_extra": "766ecf3b1a2cdd6173e2fafa45cb1adcc1752a6cfa0e9cb653491660d4ff06e0",
+    "ドットアビスX_Data/StreamingAssets/google-services-desktop.json": "38c338f9b94143cabb13e01e780a55d426baef8761f37f28967c984e1052ac20",
+    "ドットアビスX_Data/StreamingAssets/UnityServicesProjectConfiguration.json": "84c39e622f2702cd45cf50ff5cd1242389b1bdf02520acad3ea4e3ac14f778f4",
+    "ドットアビスX_Data/il2cpp_data/Metadata/global-metadata.dat": "d38f026a769e522b136830785ad2789f834c47127be764f89ab294b4d91f056d",
+    "ドットアビスX_Data/il2cpp_data/Resources/mscorlib.dll-resources.dat": "c5baa176a5b72cd545266340e42102d393a5e43d38c95796bc828918bb95277f",
+    "ドットアビスX_Data/il2cpp_data/Resources/Newtonsoft.Json.dll-resources.dat": "531de49e73ddea25554c9f656f54da2a665946f3fec57048e0cfe3b9e49b03f8",
+    "ドットアビスX_Data/il2cpp_data/Resources/System.Collections.Immutable.dll-resources.dat": "6fcf90f3020066640061632210960ceec731265abb922315da893978e37c4e72",
+    "ドットアビスX_Data/il2cpp_data/Resources/System.Data.dll-resources.dat": "98a7950ec6de3242c2e190dfa630188dfa32511a125542b94baa952d1c757d49",
+    "ドットアビスX_Data/il2cpp_data/Resources/System.Drawing.dll-resources.dat": "7c33aa707bc3fdc83991b81a97d6fc622b140762a767300f08f616c2c0a91255",
+    "ドットアビスX_Data/Plugins/x86_64/cri_mana_vpx.dll": "e58fbb0783a851c9956396a46616ff8e8485b7a6803da91c66602683d9e93055",
+    "ドットアビスX_Data/Plugins/x86_64/cri_ware_unity.dll": "3ec1e142e1deffaed37e80b888826dc4a3065852d2ac469ab79adc85b3f7cf7a",
+    "ドットアビスX_Data/Plugins/x86_64/FirebaseCppAnalytics.dll": "a72282c23799c584979de0dc841ad12f413efc4c5338694f335cb23cff07c3cb",
+    "ドットアビスX_Data/Plugins/x86_64/FirebaseCppApp-13_9_0.dll": "b38ef7b85c4ad64a1910ef59c6371e4bd7c4ceeb239c4b4ce982467619feeedd",
+    "ドットアビスX_Data/Plugins/x86_64/FirebaseCppMessaging.dll": "88af894044e09bf8fb7ac45a2aa4c1d458fc3f56e5c3d5ba51dcf86b23b3e8a3",
+    "ドットアビスX_Data/Plugins/x86_64/Live2DCubismCore.dll": "c4599835b0349fcae774cedc6dbd0057743fa503d4cc0af8f9022ca3dd845634",
+    "ドットアビスX_Data/StreamingAssets/CriStreamingData/abyss_pv_release.usm0752992b3f0733406c48a417e3b73583": "33bbc71b39deba9b4e14c99178a2bda6866a3d90bf48b65ab139499220627042"
+  }
+}

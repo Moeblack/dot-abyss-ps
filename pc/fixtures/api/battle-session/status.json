@@ -1,0 +1,14 @@
+{
+  "contents": {
+    "status": 0,
+    "quest_type": 0,
+    "quest_id": 0,
+    "stage_type": 0,
+    "stage_detail": "",
+    "party_detail": "",
+    "session_detail": "",
+    "start_at": "",
+    "records": null,
+    "notifies": null
+  }
+}

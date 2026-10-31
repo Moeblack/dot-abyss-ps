@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>DotAbyss.Local.Pc</AssemblyName>
+    <RootNamespace>DotAbyss.Local.Pc</RootNamespace>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ClientDir Condition="'$(ClientDir)' == ''">$(MSBuildProjectDirectory)\..\..\dotabyss_pc\toolchain\runtime</ClientDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src\*.cs" />
+    <Reference Include="$(ClientDir)\BepInEx\core\*.dll" Exclude="$(ClientDir)\BepInEx\core\dobby.dll" Private="false" />
+    <Reference Include="$(ClientDir)\BepInEx\interop\*.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="RequireInterop" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(ClientDir)\BepInEx\interop\Project.dll')" Text="The exact PC interop assemblies must be generated before building this adapter." />
+  </Target>
+</Project>

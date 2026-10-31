@@ -1,0 +1,8 @@
+{
+  "ServiceOrigin": "http://127.0.0.1:18083/",
+  "Profile": "pc-default",
+  "ExpectedCompany": "LocalGames",
+  "ExpectedProduct": "DotAbyssLocalPlayer",
+  "ExpectedPersistentPath": "C:\\Users\\YourName\\AppData\\LocalLow\\LocalGames\\DotAbyssLocalPlayer",
+  "TimeoutSeconds": 20
+}

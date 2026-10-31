@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Dot Abyss · 本地启动器</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="core.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="host-shell">
+      <header class="service-bar">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span><strong>Dot Abyss</strong><small>本地启动器</small></span></div>
+        <div class="service-status" role="status" aria-live="polite"><span id="state-dot" class="status-dot muted"></span><span id="state-label">正在连接启动器</span><span id="process-id" class="process-id"></span></div>
+        <div class="service-actions" aria-label="服务控制">
+          <button id="start-service" class="button primary" disabled>启动服务</button>
+          <button id="restart-service" class="button" disabled>重启</button>
+          <button id="stop-service" class="button quiet" disabled>停止</button>
+          <button id="refresh-status" class="icon-button" title="重新连接控制台" aria-label="重新连接控制台">↻</button>
+        </div>
+      </header>
+      <div id="demo-banner" class="demo-banner" hidden>界面演示 · 不启动真实服务，不读取或修改真实存档</div>
+      <div id="error-banner" class="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" class="icon-button" aria-label="关闭错误提示">×</button></div>
+      <p id="external-message" class="external-message" role="status" hidden>当前服务由其他窗口启动，本页仅连接。需要在此管理时，请先在原 PowerShell 窗口按 Ctrl+C 停止，再点击“启动服务”。</p>
+      <section class="translation-bar" aria-label="繁体翻译">
+        <div class="translation-heading"><strong>繁体中文</strong><span id="translation-dot" class="status-dot muted"></span><span id="translation-state" role="status" aria-live="polite">等待检查</span></div>
+        <p id="translation-hint">安装繁体译文、字体和兼容插件，完成后重新启动游戏生效。</p>
+        <div class="translation-actions"><button id="install-translation" class="button" disabled>一键安装</button><button id="toggle-translation" class="button quiet" aria-expanded="false" aria-controls="translation-details">详情</button></div>
+      </section>
+      <section id="translation-details" class="translation-details" aria-label="翻译安装详情" hidden>
+        <div class="translation-progress"><label id="translation-phase" for="translation-progress">尚未开始</label><span id="translation-percent">0%</span><progress id="translation-progress" max="100" value="0"></progress></div>
+        <div class="translation-meta"><span id="translation-version">尚未安装翻译</span><span>安装过程不修改存档；服务可以继续运行。</span><button id="refresh-translation" class="button small">刷新状态</button><button id="refresh-translation-logs" class="button small">刷新日志</button></div>
+        <pre id="translation-log" tabindex="0" aria-label="翻译安装日志">展开后读取日志。</pre>
+      </section>
+      <main class="stage">
+        <section id="welcome" class="welcome">
+          <div class="welcome-main">
+            <div class="welcome-mark" aria-hidden="true">✦</div>
+            <h1 id="welcome-title">服务尚未启动</h1>
+            <p id="welcome-message">启动本地服务后，即可选择存档、进入游戏和管理进度。</p>
+            <div class="welcome-actions"><button id="welcome-start" class="button primary" disabled>启动本地服务</button><button id="welcome-retry" class="button">刷新状态</button></div>
+          </div>
+          <aside class="service-info" aria-label="服务信息"><h2>当前环境</h2><dl><dt>服务地址</dt><dd id="service-origin">等待连接</dd><dt>运行方式</dt><dd id="ownership-label">本机服务</dd></dl><p>存档与控制台保持原样。服务就绪后，工作台会在这里打开。</p></aside>
+        </section>
+        <section id="console-stage" class="console-stage" aria-label="游戏控制台" hidden>
+          <div id="frame-loading" class="frame-loading" role="status">正在打开控制台…</div>
+          <iframe id="console-frame" title="Dot Abyss 游戏控制台" referrerpolicy="no-referrer"></iframe>
+        </section>
+      </main>
+      <details id="log-panel" class="log-panel">
+        <summary><span>服务日志</span><span id="log-summary" class="log-summary">查看最近运行信息</span></summary>
+        <div class="log-toolbar"><span id="log-path">尚未读取日志</span><button id="refresh-logs" class="button small">刷新日志</button></div>
+        <div class="log-directory">存档目录：<span id="data-directory">等待连接</span></div>
+        <pre id="log-content" tabindex="0" aria-label="服务日志内容">展开后读取日志。</pre>
+      </details>
+    </div>
+    <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+      <form method="dialog">
+        <div class="dialog-body"><h2 id="confirm-title">停止服务？</h2><p id="confirm-message">游戏与控制台的连接将中断，尚未应用的编辑会丢失。请先完成当前操作；已经保存的进度会保留。</p></div>
+        <div class="dialog-actions"><button class="button" value="cancel" autofocus>取消</button><button id="confirm-action" class="button primary" value="confirm">停止服务</button></div>
+      </form>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Dot Abyss · 启动器与工作台</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="labels.js" defer></script>
+    <script src="vocabulary.js" defer></script>
+    <script src="launcher.js" defer></script>
+    <script src="fields.js" defer></script>
+    <script src="demo.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#" aria-label="Dot Abyss 本地工作台"
+          ><span class="brand-mark" aria-hidden="true">✦</span
+          ><span><strong>Dot Abyss</strong><small>本地工作台</small></span></a
+        >
+        <div class="nav-caption">游戏管理</div>
+        <nav id="navigation" aria-label="功能分类"></nav>
+        <div class="sidebar-bottom">
+          <span class="local-dot"></span><span>只操作本地存档</span
+          ><button id="help-button" class="icon-button" aria-label="使用说明">
+            ?
+          </button>
+        </div>
+      </aside>
+      <div class="app-main">
+        <header class="topbar">
+          <div class="profile-picker">
+            <span class="profile-avatar" aria-hidden="true">◇</span
+            ><label for="profile-select">当前存档</label
+            ><select id="profile-select" aria-label="选择当前存档">
+              <option>正在连接…</option>
+            </select>
+            <button
+              id="create-profile-button"
+              class="button ghost"
+              type="button"
+            >
+              新建存档
+            </button>
+            <button
+              id="rename-profile-button"
+              class="icon-button"
+              type="button"
+              title="重命名存档"
+              aria-label="重命名存档"
+            >
+              ✎
+            </button>
+          </div>
+          <div class="launcher-actions">
+            <span id="launcher-hint" class="launcher-hint"
+              >正在读取游戏状态</span
+            >
+            <button
+              id="launch-game-button"
+              class="button primary"
+              type="button"
+              disabled
+            >
+              启动游戏
+            </button>
+          </div>
+          <div class="connection">
+            <span id="connection-dot" class="status-dot pending"></span
+            ><span id="connection-label">连接本地服务</span
+            ><button
+              id="refresh-button"
+              class="icon-button"
+              title="刷新（F5）"
+              aria-label="刷新"
+            >
+              ↻
+            </button>
+          </div>
+        </header>
+        <div
+          id="profile-context"
+          class="profile-context"
+          aria-live="polite"
+        ></div>
+        <div id="demo-banner" class="demo-banner" hidden>
+          界面演示 · 使用合成数据，所有操作均不会修改真实存档
+        </div>
+        <main>
+          <div class="page-heading">
+            <div>
+              <h1 id="page-title">连接与概况</h1>
+              <p id="page-description">正在读取本地服务支持的管理功能。</p>
+            </div>
+            <span id="page-count" class="count-badge" hidden></span>
+          </div>
+          <div id="error-banner" class="error-banner" role="alert" hidden>
+            <span id="error-message"></span
+            ><button
+              id="dismiss-error"
+              class="icon-button"
+              aria-label="关闭提示"
+            >
+              ×
+            </button>
+          </div>
+          <div id="workspace" aria-live="polite"></div>
+        </main>
+        <footer class="statusbar">
+          <span id="status-message">正在初始化工作台…</span
+          ><span class="sync"
+            ><span id="sync-dot" class="status-dot muted"></span
+            ><span id="sync-label">等待客户端状态</span></span
+          >
+        </footer>
+      </div>
+    </div>
+    <dialog id="picker-dialog">
+      <div class="dialog-heading">
+        <div>
+          <h2 id="picker-title">选择内容</h2>
+          <p id="picker-subtitle">按名称或 ID 搜索</p>
+        </div>
+        <button class="icon-button" data-close-dialog aria-label="关闭">
+          ×
+        </button>
+      </div>
+      <div class="search-row">
+        <input
+          id="picker-query"
+          type="search"
+          placeholder="输入名称或 ID"
+        /><button id="picker-search" class="button secondary">搜索</button>
+      </div>
+      <div id="picker-results" class="picker-results"></div>
+      <div class="dialog-footer">
+        <span id="picker-count"></span>
+        <div>
+          <button id="picker-prev" class="button ghost">上一页</button
+          ><button id="picker-next" class="button ghost">下一页</button
+          ><button id="picker-confirm" class="button primary">填入选择</button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="detail-dialog">
+      <div class="dialog-heading">
+        <h2 id="detail-title">数据明细</h2>
+        <button class="icon-button" data-close-dialog aria-label="关闭">
+          ×
+        </button>
+      </div>
+      <pre id="detail-content" class="json-content"></pre>
+      <div class="dialog-footer">
+        <span>原始字段用于核对；修改请使用对应操作。</span
+        ><button class="button secondary" data-close-dialog>关闭</button>
+      </div>
+    </dialog>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <h2>让修改可见，也可追溯</h2>
+        <button class="icon-button" data-close-dialog aria-label="关闭">
+          ×
+        </button>
+      </div>
+      <div class="help-content">
+        <p>
+          选择存档后，从左侧进入功能，填写参数，先预览再应用。应用后留意底部同步状态。
+        </p>
+        <p>
+          存档数据只读；角色成长、解锁、领取奖励使用各自的操作。主数据和规则有独立的版本校验。
+        </p>
+        <p>
+          当前战斗与整轮远征可能保留入场时的状态。需要切页、重新登录或下一轮生效的修改，会在预览中明确说明。
+        </p>
+        <p>
+          存档备份页支持导出、导入和恢复预览。仅打开备份文件不会覆盖当前进度。
+        </p>
+        <p>快捷键：F5 刷新，Ctrl+F 搜索当前列表。</p>
+      </div>
+    </dialog>
+    <dialog id="profile-dialog" class="profile-dialog">
+      <form id="profile-form">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="profile-dialog-title">新建存档</h2>
+            <p id="profile-dialog-description">
+              独立保存进度，从新手教程开始。
+            </p>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            data-close-dialog
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </div>
+        <div class="profile-form-fields">
+          <label for="profile-label">存档名称</label
+          ><input
+            id="profile-label"
+            name="label"
+            maxlength="64"
+            required
+            autocomplete="off"
+            placeholder="例如：第一次冒险"
+          />
+          <div id="player-name-field">
+            <label for="profile-player-name">游戏昵称</label
+            ><input
+              id="profile-player-name"
+              name="player_name"
+              maxlength="32"
+              autocomplete="off"
+              placeholder="可留空"
+            />
+            <p>
+              留空时使用存档名称；名称超过昵称上限时使用“司令官”。存档名称与游戏昵称可以不同。
+            </p>
+          </div>
+          <p
+            id="profile-form-error"
+            class="profile-form-error"
+            role="alert"
+            hidden
+          ></p>
+        </div>
+        <div class="dialog-footer">
+          <span>已有存档与内部标识保持不变。</span>
+          <div>
+            <button type="button" class="button secondary" data-close-dialog>
+              取消</button
+            ><button
+              id="save-profile-button"
+              class="button primary"
+              type="submit"
+            >
+              创建存档
+            </button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

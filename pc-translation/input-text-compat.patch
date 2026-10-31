@@ -1,0 +1,60 @@
+diff --git a/AbyssMod/Patches/GeneralTextPatch.cs b/AbyssMod/Patches/GeneralTextPatch.cs
+index 14c3ddd..677bebc 100644
+--- a/AbyssMod/Patches/GeneralTextPatch.cs
++++ b/AbyssMod/Patches/GeneralTextPatch.cs
+@@ -40,7 +40,7 @@ public static class GeneralTextPatch
+ 
+     private static void TranslateStaticUiText(TMP_Text text)
+     {
+-        if (text == null || !Config.Translation.Value)
++        if (text == null || !Config.Translation.Value || UiTextTranslator.IsInputValue(text))
+             return;
+ 
+         try
+@@ -87,7 +87,7 @@ public static class GeneralTextPatch
+             var all = UnityEngine.Object.FindObjectsOfType<TMP_Text>(true);
+             foreach (var tmp in all)
+             {
+-                if (tmp == null)
++                if (tmp == null || UiTextTranslator.IsInputValue(tmp))
+                     continue;
+ 
+                 string s = tmp.text;
+@@ -129,7 +129,7 @@ public static class GeneralTextPatch
+ 
+     private static void ApplyTranslation(ref string s, TMP_Text instance = null)
+     {
+-        if (_inTranslation) return;
++        if (_inTranslation || UiTextTranslator.IsInputValue(instance)) return;
+         _inTranslation = true;
+         try
+         {
+diff --git a/AbyssMod/Services/UiTextTranslator.cs b/AbyssMod/Services/UiTextTranslator.cs
+index f5e4402..c434fa7 100644
+--- a/AbyssMod/Services/UiTextTranslator.cs
++++ b/AbyssMod/Services/UiTextTranslator.cs
+@@ -14,7 +14,7 @@ public static class UiTextTranslator
+ 
+     public static string Translate(TMP_Text text, string value)
+     {
+-        if (!Config.Translation.Value || Plugin.Trans == null || value == null)
++        if (!Config.Translation.Value || Plugin.Trans == null || value == null || IsInputValue(text))
+             return value;
+         if (value.Length == 0)
+             return value;
+@@ -40,6 +40,15 @@ public static class UiTextTranslator
+         return value;
+     }
+ 
++    public static bool IsInputValue(TMP_Text text)
++    {
++        if (text == null)
++            return false;
++
++        var input = text.GetComponentInParent<TMP_InputField>(true);
++        return input != null && input.textComponent == text;
++    }
++
+     private static bool IsAlreadyTranslated(Dictionary<string, string> table, string value)
+     {
+         foreach (string translated in table.Values)
