@@ -7,7 +7,9 @@ from .admin_actions_economy import OPERATIONS as ECONOMY
 from .admin_actions_growth import OPERATIONS as GROWTH
 from .admin_actions_modes import OPERATIONS as MODES
 from .admin_actions_progress import OPERATIONS as PROGRESS
-from .gameplay_catalog import GameplayError
+from .admin_display_references import CONTENT_TABLES, NOVEL_TABLES, reference_table
+from .gameplay_catalog import GAMEPLAY_TABLES, GameplayError
+from .newgame import RECORD_NAMES
 
 ROUTE_ACTIONS = [
     ("profile.name", "profile", "修改玩家名字", "api/profile/edit/name"),
@@ -119,10 +121,9 @@ def route_field(name, catalog=None):
         options["default"] = copy.deepcopy(TEMPLATES[name])
     if kind == "string":
         options.update(max_length=300, allow_empty=name == "comment", multiline=name == "comment")
-    if name.endswith("_id") and name.startswith(("m_", "t_")):
-        table = name[:-3] + "s"
-        if catalog is None or table.startswith("t_") or table in catalog.tables:
-            options["source"] = table
+    table = reference_table(name, set(catalog.tables if catalog is not None else GAMEPLAY_TABLES) | set(RECORD_NAMES))
+    if table is not None:
+        options["source"] = table
     return field(name, LABELS.get(name, name), kind, **options)
 
 
@@ -158,6 +159,8 @@ def action_specs(catalog=None):
         "novel.unlock": {"ids": {str(i): "m_novel_" + name for i, name in ((1, "mains"), (2, "events"), (3, "characters"), (4, "homes"), (5, "character_skins"), (6, "prologues"), (7, "others"))}},
         "training.complete": {"ids": {name: f"m_{name}_quests" for name in ("coaching", "recollection", "tryout")}},
         "inventory.balance": {"master_id": {"30": "m_items", "54": "m_event_currencies", "56": "m_event_boss_tickets", "170": "m_gacha_tokens"}},
+        "inventory.grant": {"master_id": {str(kind): table for kind, table in CONTENT_TABLES.items()}},
+        "mail.create": {"master_id": {str(kind): table for kind, table in CONTENT_TABLES.items()}},
         "shop.reset_counter": {"master_id": {"shop": "m_payments", "exchange": "m_exchange_lineups"}},
     }
     for identifier in ("equipment.create", "equipment.edit", "equipment.delete", "equipment.enchantment"):
@@ -169,6 +172,12 @@ def action_specs(catalog=None):
             mapping = sources.get(definition["id"], {}).get(item["name"])
             if mapping:
                 item["source_by"] = {"field": "kind", "values": mapping}
+            if (definition["id"], item["name"]) in (("mail.withdraw", "mail_id"), ("mail.receive", "ids")):
+                item["source"] = "t_presents"
+            if definition["id"] == "story.read" and item["name"] == "m_novel_id":
+                item["source_by"] = {"field": "novel_type", "values": NOVEL_TABLES}
+            if item["name"] == "t_equipment_id" and any(field["name"] == "content_type" for field in definition["fields"]):
+                item["source_by"] = {"field": "content_type", "values": {"70": "t_weapons", "80": "t_armors", "90": "t_accessories"}}
     return values
 
 

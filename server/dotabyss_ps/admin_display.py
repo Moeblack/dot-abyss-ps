@@ -5,7 +5,7 @@ import re
 import threading
 from pathlib import Path
 
-from .gameplay_records import identity_field
+from .admin_display_references import DisplayResolver, MasterDisplayIndex, reference_table
 
 
 class DisplayTranslations:
@@ -56,36 +56,8 @@ class DisplayTranslations:
 
     @staticmethod
     def referenced_table(field, catalog):
-        if not field.startswith("m_") or not field.endswith("_id"):
-            return None
-        name = field[:-3]
-        candidates = [name + "s", name + "es", name[:-1] + "ies" if name.endswith("y") else ""]
-        return next((candidate for candidate in candidates if candidate in catalog.tables), None)
+        return reference_table(field, catalog.tables)
 
     def native_records(self, records, catalog):
-        result, lookups = {}, {}
-        for table, container in records.items():
-            labels = {}
-            for row in container.get("up", []):
-                display = {}
-                for field, identifier in row.items():
-                    target = self.referenced_table(field, catalog)
-                    if target is None or type(identifier) is not int:
-                        continue
-                    definition = catalog.tables[target].get(identifier)
-                    if definition is None:
-                        continue
-                    label_field = next((key for key in ("name", "title", "label") if isinstance(definition.get(key), str) and definition[key]), None)
-                    if label_field is None:
-                        continue
-                    if target not in lookups:
-                        lookups[target] = self.lookup(target)
-                    title = self.row(target, definition, lookups[target]).get(label_field, definition[label_field])
-                    display[field] = title
-                    if "name" not in row:
-                        display.setdefault("name", title)
-                if display:
-                    labels[str(row[identity_field(table)])] = display
-            if labels:
-                result[table] = labels
-        return result
+        index = catalog if isinstance(catalog, MasterDisplayIndex) else MasterDisplayIndex(catalog.tables)
+        return DisplayResolver(index, self, records).native_records()

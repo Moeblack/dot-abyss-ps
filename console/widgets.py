@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import tkinter as tk
+from collections import Counter
 from tkinter import ttk
 
+from .display import cell_value, display_value, preferred_columns, row_identity, row_label
 from .models import compact, parse_field
 
 
@@ -79,7 +81,7 @@ class JsonView(ttk.Frame):
         self.columnconfigure(0, weight=1)
 
     def show(self, value):
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)
+        text = value if isinstance(value, str) else json.dumps(display_value(value), ensure_ascii=False, indent=2, allow_nan=False)
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
         self.text.insert("1.0", text)
@@ -87,20 +89,33 @@ class JsonView(ttk.Frame):
 
 
 class FieldForm(ScrollFrame):
-    def __init__(self, master, on_change=None, on_pick=None):
+    def __init__(self, master, on_change=None, on_pick=None, on_resolve=None):
         super().__init__(master)
         self.fields = []
         self.controls = {}
         self.on_change = on_change or (lambda: None)
         self.on_pick = on_pick
+        self.on_resolve = on_resolve
         self.loading = False
+        self.reference_jobs = {}
+        self.reference_serial = 0
 
     def set_fields(self, fields: list[dict], values: dict | None = None):
         self.loading = True
+        for job in self.reference_jobs.values():
+            self.after_cancel(job)
+        self.reference_jobs = {}
+        self.reference_serial += 1
         self.clear()
         self.fields = fields
         self.controls = {}
+        self.reference_labels = {}
+        self.reference_sources = {}
+        self.reference_revisions = {}
+        self.hint_vars = {}
+        self.base_hints = {}
         values = values or {}
+        self.initial_values = values
         self.content.columnconfigure(0, weight=1)
         for position, spec in enumerate(fields):
             name = spec["name"]
@@ -124,7 +139,7 @@ class FieldForm(ScrollFrame):
                 self.controls[name] = (spec, variable, None)
             elif choices:
                 choice_map = self.choice_map(choices)
-                selected = next((label for label, item in choice_map.items() if item == value), "")
+                selected = next((label for label, item in choice_map.items() if type(item) is type(value) and item == value), "")
                 variable = tk.StringVar(value=selected)
                 widget = ttk.Combobox(frame, textvariable=variable, values=list(choice_map), state="readonly")
                 self.controls[name] = (spec, variable, choice_map)
@@ -158,28 +173,43 @@ class FieldForm(ScrollFrame):
                 hint += ("；" if hint else "") + "，".join(bounds)
             if not hint and kind == "ids":
                 hint = "多个 ID 用逗号分隔，也可从目录选择。"
-            if hint:
-                ttk.Label(self.content, text=hint, style="Hint.TLabel", wraplength=390).grid(row=position * 3 + 2, column=0, sticky="w", pady=(4, 2))
+            self.base_hints[name] = hint
+            hint_variable = tk.StringVar(value=hint)
+            self.hint_vars[name] = hint_variable
+            if hint or spec.get("source") or spec.get("source_by") or name in values.get("_display", {}):
+                ttk.Label(self.content, textvariable=hint_variable, style="Hint.TLabel", wraplength=390).grid(row=position * 3 + 2, column=0, sticky="w", pady=(4, 2))
         self.loading = False
+        for name in self.controls:
+            self._refresh_reference(name)
 
     @staticmethod
     def choice_map(choices):
         if isinstance(choices, dict):
-            return {str(label): value for value, label in choices.items()}
+            entries = [(value, str(label)) for value, label in choices.items()]
+        else:
+            entries = []
+            for choice in choices:
+                if isinstance(choice, dict):
+                    value = choice.get("value", choice.get("id"))
+                    label = choice.get("label", choice.get("name", str(value)))
+                else:
+                    value, label = choice, str(choice)
+                entries.append((value, str(label)))
+        counts = Counter(label for _, label in entries)
         mapping = {}
-        for choice in choices:
-            if isinstance(choice, dict):
-                value = choice.get("value", choice.get("id"))
-                label = choice.get("label", choice.get("name", str(value)))
-            else:
-                value, label = choice, str(choice)
-            mapping[str(label)] = value
+        for index, (value, label) in enumerate(entries):
+            if counts[label] > 1:
+                label += "（值: " + json.dumps(value, ensure_ascii=False) + "）"
+            if label in mapping:
+                label += f" [{index + 1}]"
+            mapping[label] = value
         return mapping
 
     def _text_changed(self, event):
         if event.widget.edit_modified():
             event.widget.edit_modified(False)
-            self._changed()
+            name = next((name for name, (_, control, _) in self.controls.items() if control is event.widget), None)
+            self._field_changed(name) if name is not None else self._changed()
 
     def _changed(self):
         if not self.loading:
@@ -190,13 +220,83 @@ class FieldForm(ScrollFrame):
             return
         for field in self.fields:
             if field.get("source_by", {}).get("field") == name and field["name"] != name:
+                self.reference_labels.pop(field["name"], None)
                 self.set_value(field["name"], [] if field.get("type") == "ids" else "")
+        self._refresh_reference(name)
         self._changed()
+
+    def field_value(self, name):
+        spec, control, choices = self.controls[name]
+        raw = control.get("1.0", "end-1c") if isinstance(control, tk.Text) else control.get()
+        return choices.get(raw) if choices is not None else parse_field(spec, raw)
+
+    def _refresh_reference(self, name):
+        if self.loading or name not in self.controls:
+            return
+        if name in self.reference_jobs:
+            self.after_cancel(self.reference_jobs.pop(name))
+        self.reference_serial += 1
+        self.reference_revisions[name] = self.reference_serial
+        try:
+            value = self.field_value(name)
+        except (ValueError, TypeError):
+            value = None
+        source = self.source(name)
+        if source != self.reference_sources.get(name):
+            self.reference_labels[name] = {}
+            self.reference_sources[name] = source
+        identifiers = value if isinstance(value, list) else [value]
+        identifiers = list(dict.fromkeys(item for item in identifiers if type(item) is int and item > 0))
+        self._show_reference(name, value, identifiers)
+        if source and identifiers and self.on_resolve:
+            revision = self.reference_revisions[name]
+            self.reference_jobs[name] = self.after(250, lambda: self._resolve_reference(name, source, identifiers[:100], revision))
+
+    def _show_reference(self, name, value, identifiers):
+        parts = [self.base_hints[name]] if self.base_hints[name] else []
+        labels = self.reference_labels.get(name, {})
+        if self.reference_sources.get(name) and identifiers:
+            names = [f"{labels[str(item)]}（ID: {item}）" if labels.get(str(item)) else f"ID: {item}" for item in identifiers[:8]]
+            parts.append("对应内容：" + "；".join(names) + (f"；共 {len(identifiers)} 项" if len(identifiers) > 8 else ""))
+        elif value == self.initial_values.get(name) and name in self.initial_values.get("_display", {}):
+            parts.append("显示：" + compact(display_value(value, self.initial_values["_display"][name]), 500))
+        self.hint_vars[name].set("\n".join(parts))
+
+    def _resolve_reference(self, name, source, identifiers, revision):
+        self.reference_jobs.pop(name, None)
+        def done(labels):
+            if not self.winfo_exists() or self.reference_revisions.get(name) != revision or self.source(name) != source:
+                return
+            self.reference_labels[name] = {str(key): label for key, label in labels.items() if isinstance(label, str) and label}
+            current = self.field_value(name)
+            all_identifiers = current if isinstance(current, list) else [current]
+            all_identifiers = list(dict.fromkeys(item for item in all_identifiers if type(item) is int and item > 0))
+            self._show_reference(name, current, all_identifiers)
+        self.on_resolve(source, identifiers, done)
+
+    def remember_selection(self, name, selected, identity=None):
+        source = self.source(name)
+        if source != self.reference_sources.get(name):
+            self.reference_labels[name] = {}
+        self.reference_sources[name] = source
+        self.reference_labels.setdefault(name, {}).update({str(row_identity(row, identity)): row_label(row)
+                                                          for row in selected if row_label(row)})
+        self._refresh_reference(name)
+
+    def display_arguments(self, values):
+        labels = {}
+        for name, value in values.items():
+            names = self.reference_labels.get(name, {})
+            if self.reference_sources.get(name):
+                labels[name] = [names.get(str(item)) for item in value] if isinstance(value, list) else names.get(str(value))
+        return display_value(values, labels)
 
     def source(self, name):
         spec = self.controls[name][0]
         dependency = spec.get("source_by")
         if dependency:
+            if dependency["field"] not in self.controls:
+                return ""
             _, control, choices = self.controls[dependency["field"]]
             value = control.get()
             if choices is not None:
@@ -226,12 +326,19 @@ class FieldForm(ScrollFrame):
     def set_value(self, name: str, value):
         spec, control, choices = self.controls[name]
         if choices is not None:
-            control.set(next((label for label, item in choices.items() if item == value), ""))
+            control.set(next((label for label, item in choices.items() if type(item) is type(value) and item == value), ""))
         elif isinstance(control, tk.Text):
             control.delete("1.0", "end")
             control.insert("1.0", json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value))
         else:
             control.set(value)
+        self._refresh_reference(name)
+
+    def destroy(self):
+        for job in self.reference_jobs.values():
+            self.after_cancel(job)
+        self.reference_jobs.clear()
+        super().destroy()
 
 
 class DataTable(ttk.Frame):
@@ -257,13 +364,13 @@ class DataTable(ttk.Frame):
         if columns is not None:
             self.columns = columns
         if not self.columns:
-            self.columns = [(name, name) for name in dict.fromkeys(key for row in rows[:20] for key in row)][:8]
+            self.columns = [(name, name) for name in preferred_columns(rows)]
         self.tree.configure(columns=[name for name, _ in self.columns])
         for name, label in self.columns:
             self.tree.heading(name, text=label)
             self.tree.column(name, width=160 if name not in {"id", "index"} else 80, minwidth=60, stretch=True)
         for index, row in enumerate(rows):
-            self.tree.insert("", "end", iid=str(index), values=[compact(row.get(name)) for name, _ in self.columns])
+            self.tree.insert("", "end", iid=str(index), values=[compact(cell_value(row, name), 500) for name, _ in self.columns])
 
     def _selected(self, _):
         selection = self.tree.selection()

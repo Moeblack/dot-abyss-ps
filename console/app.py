@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 from urllib.parse import quote
 
 from .client import AdminClient, ConsoleError, read_token
+from .display import display_value, matches_query, record_identity_field, record_rows, row_identity, row_label
 from .labels import RULE_LABELS, SYNC_LABELS
 from .models import GROUP_LABELS, actions_from_schema, compact
 from .widgets import COLORS, DataTable, FieldForm, JsonView, configure_style
@@ -427,7 +428,7 @@ class ConsoleApp:
         self.editor_hint.pack(fill="x")
         self.editor_tabs = ttk.Notebook(right)
         self.editor_tabs.pack(fill="both", expand=True, padx=8)
-        self.form = FieldForm(self.editor_tabs, on_change=self._invalidate_preview, on_pick=self.pick_catalog)
+        self.form = FieldForm(self.editor_tabs, on_change=self._invalidate_preview, on_pick=self.pick_catalog, on_resolve=self._resolve_field_names)
         self.preview_view = JsonView(self.editor_tabs)
         self.detail_view = JsonView(self.editor_tabs)
         self.editor_tabs.add(self.form, text="填写参数")
@@ -461,7 +462,7 @@ class ConsoleApp:
 
     def _build_state_browser(self, parent):
         self.state_table_name = tk.StringVar()
-        names = sorted(self.snapshot.get("state", {}).get("records", {}))
+        names = sorted(self.snapshot.get("state", {}).get("records", {}).keys() | self.snapshot.get("record_sources", {}).keys())
         names.extend("progress." + key for key in sorted(self.snapshot.get("progress", {})))
         box = ttk.Combobox(parent, textvariable=self.state_table_name, values=names, state="readonly")
         box.pack(fill="x", pady=(0, 10))
@@ -476,18 +477,29 @@ class ConsoleApp:
 
     def _show_state_table(self):
         name = self.state_table_name.get()
+        labels = None
         if name.startswith("progress."):
             value = self.snapshot.get("progress", {}).get(name[9:])
+            labels = self.snapshot.get("progress_display", {}).get(name[9:])
         else:
-            value = self.snapshot.get("state", {}).get("records", {}).get(name, {})
-            if isinstance(value, dict) and "up" in value:
-                value = value["up"]
+            value = record_rows(self.snapshot, name)
         if isinstance(value, dict):
             rows = [{"key": key, "value": item} for key, item in value.items()]
+            if isinstance(labels, dict):
+                rows = [{**row, "_display": {"value": labels[row["key"]]}} if row["key"] in labels else row for row in rows]
         elif isinstance(value, list):
             rows = [item if isinstance(item, dict) else {"index": index, "value": item} for index, item in enumerate(value)]
+            if isinstance(labels, list):
+                for index, annotation in enumerate(labels[:len(rows)]):
+                    if annotation is None:
+                        continue
+                    display = annotation if isinstance(value[index], dict) else {"value": annotation}
+                    if isinstance(display, dict):
+                        rows[index] = {**rows[index], "_display": {**rows[index].get("_display", {}), **display}}
         else:
             rows = [{"value": value}]
+            if labels is not None:
+                rows[0]["_display"] = {"value": labels}
         self.state_table.columns = []
         self.state_table.show(rows[:1000])
         if len(rows) > 1000:
@@ -495,8 +507,25 @@ class ConsoleApp:
 
     def _inspect(self, row):
         if hasattr(self, "detail_view") and self.detail_view.winfo_exists():
-            self.detail_view.show(row)
+            self.detail_view.show(display_value(row))
             self.editor_tabs.select(self.detail_view)
+
+    def _resolve_field_names(self, source, identifiers, complete):
+        if source.startswith("t_"):
+            requested = {str(identifier) for identifier in identifiers}
+            identity = record_identity_field(self.snapshot, source)
+            complete({str(row_identity(row, identity)): row_label(row) for row in record_rows(self.snapshot, source)
+                      if str(row_identity(row, identity)) in requested and row_label(row)})
+        elif self.client and source.startswith("m_"):
+            client = self.client
+            def load():
+                try:
+                    return client.post("/admin/resolve", {"table": source, "ids": identifiers})
+                except ConsoleError:
+                    return {"labels": {}}
+            self._submit(load, lambda result: complete(result.get("labels", {})), quiet=True)
+        else:
+            complete({})
 
     def _build_catalog(self, parent):
         top = ttk.Frame(parent, style="Surface.TFrame")
@@ -531,15 +560,14 @@ class ConsoleApp:
         self.catalog_offset = offset
         target = self.catalog_rows
         def done(result):
-            if not target.winfo_exists():
+            if (not target.winfo_exists() or table != self.catalog_source.get() or offset != self.catalog_offset
+                    or query != self.catalog_query.get()):
                 return
             target.columns = []
             target.show(result.get("rows", []))
             self.catalog_count.configure(text=f"{offset + 1 if result.get('rows') else 0}–{offset + len(result.get('rows', []))} / {result.get('total', 0)}")
         if table.startswith("t_"):
-            record = self.snapshot.get("state", {}).get("records", {}).get(table, {})
-            rows = record.get("up", []) if isinstance(record, dict) else record
-            rows = [row for row in rows if query.casefold() in json.dumps(row, ensure_ascii=False).casefold()]
+            rows = [row for row in record_rows(self.snapshot, table) if matches_query(row, query)]
             done({"rows": rows[offset:offset + 100], "total": len(rows)})
         else:
             self._submit(lambda: client.get("/admin/catalog", table=table, q=query, offset=offset, limit=100), done)
@@ -571,11 +599,14 @@ class ConsoleApp:
             lines = [result.get("summary", "修改预览"), "", "生效方式：" + self._timing_label(result.get("timing", "")), ""]
             for change in result.get("changes", []):
                 lines.append(f"{change.get('table', '数据')}：新增 {change.get('added', 0)}，修改 {change.get('updated', 0)}，删除 {change.get('removed', 0)}")
+                if change.get("examples"):
+                    lines.append(json.dumps(display_value(change)["examples"], ensure_ascii=False, indent=2))
             if result.get("warnings"):
                 lines.extend(["", "请留意：", *["• " + str(warning) for warning in result["warnings"]]])
             visible_arguments = payload.get("args", payload.get("changes", {}))
             if visible_arguments and "snapshot" not in visible_arguments:
-                lines.extend(["", "提交内容：", json.dumps(visible_arguments, ensure_ascii=False, indent=2)])
+                displayed = self.form.display_arguments(visible_arguments) if hasattr(self, "form") and self.form.winfo_exists() else visible_arguments
+                lines.extend(["", "提交内容（名称仅供核对，实际仍提交 ID）：", json.dumps(displayed, ensure_ascii=False, indent=2)])
             lines.extend(["", "确认内容后点击「应用修改」。预览过期或数据变化时需要重新预览。"])
             self.preview_view.show("\n".join(lines))
             self.editor_tabs.select(self.preview_view)
@@ -628,39 +659,48 @@ class ConsoleApp:
         notice = ttk.Label(footer, text="选择一条记录后填入 ID。", style="Muted.TLabel")
         notice.pack(side="left")
         client = self.client
+        identity = {"field": "id"}
+        request_number = 0
         def search():
+            nonlocal request_number
+            request_number += 1
+            request = request_number
             search_text = query.get()
             def done(result):
-                if dialog.winfo_exists():
+                if dialog.winfo_exists() and request == request_number:
+                    identity["field"] = result.get("identity_field", "id")
                     table.columns = []
                     table.show(result.get("rows", []))
-                    notice.configure(text=f"显示前 {len(result.get('rows', []))} / {result.get('total', 0)} 条；可用名称或 ID 缩小范围。")
+                    choose_button.configure(state="disabled" if identity["field"] is None else "normal")
+                    table.tree.configure(selectmode="none" if identity["field"] is None else "extended" if spec.get("type") == "ids" else "browse")
+                    notice.configure(text="此目录没有单列唯一 ID，仅供查看。" if identity["field"] is None else
+                                     f"显示前 {len(result.get('rows', []))} / {result.get('total', 0)} 条；可用名称或 ID 缩小范围。")
             if source.startswith("t_"):
-                record = self.snapshot.get("state", {}).get("records", {}).get(source, {})
-                rows = record.get("up", []) if isinstance(record, dict) else record
-                rows = [row for row in rows if search_text.casefold() in json.dumps(row, ensure_ascii=False).casefold()]
-                done({"rows": rows[:100], "total": len(rows)})
+                rows = [row for row in record_rows(self.snapshot, source) if matches_query(row, search_text)]
+                done({"rows": rows[:100], "total": len(rows), "identity_field": record_identity_field(self.snapshot, source)})
             else:
                 self._submit(lambda: client.get("/admin/catalog", table=source, q=search_text, offset=0, limit=100), done)
         def choose():
             rows = table.selections()
             if not rows:
                 return
-            identities = [row.get("id") for row in rows]
-            if any(identity is None for identity in identities):
+            identities = [row_identity(row, identity["field"]) for row in rows] if identity["field"] else []
+            if not identities or any(identifier is None for identifier in identities):
                 self._error(ValueError("此记录没有可识别的 ID，请查看明细。"))
                 return
             if spec.get("type") == "ids":
                 try:
-                    existing = form.values().get(name, [])
+                    existing = form.field_value(name) or []
                 except ValueError:
                     existing = []
                 form.set_value(name, list(dict.fromkeys([*existing, *identities])))
             else:
                 form.set_value(name, identities[0])
+            form.remember_selection(name, rows, identity["field"])
             dialog.destroy()
         ttk.Button(footer, text="搜索", command=search).pack(side="right", padx=(8, 0))
-        ttk.Button(footer, text="填入 ID", style="Accent.TButton", command=choose).pack(side="right")
+        choose_button = ttk.Button(footer, text="填入 ID", style="Accent.TButton", command=choose)
+        choose_button.pack(side="right")
         dialog.bind("<Return>", lambda _: search())
         search()
 
@@ -674,7 +714,7 @@ class ConsoleApp:
         ttk.Label(left, text=left_title, style="Subtitle.TLabel").pack(anchor="w", pady=(0, 12))
         self.editor_tabs = ttk.Notebook(right)
         self.editor_tabs.pack(fill="both", expand=True)
-        self.form = FieldForm(self.editor_tabs, on_change=self._invalidate_preview)
+        self.form = FieldForm(self.editor_tabs, on_change=self._invalidate_preview, on_pick=self.pick_catalog, on_resolve=self._resolve_field_names)
         self.preview_view = JsonView(self.editor_tabs)
         self.editor_tabs.add(self.form, text="编辑")
         self.editor_tabs.add(self.preview_view, text="修改预览")
@@ -782,7 +822,7 @@ class ConsoleApp:
             if not target.winfo_exists() or table != self.master_table or offset != self.master_offset:
                 return
             self.master_data = result
-            rows = [{"index": row["index"], **row["values"]} for row in result.get("rows", [])]
+            rows = [{"index": row["index"], **row["values"], "_display": row.get("display", {})} for row in result.get("rows", [])]
             target.columns = []
             target.show(rows)
             self.master_count.configure(text=f"{offset + 1 if rows else 0}–{offset + len(rows)} / {result.get('total', 0)}")

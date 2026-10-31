@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import secrets
 import threading
 import time
@@ -12,11 +13,13 @@ import msgpack
 from .admin_master import apply_overrides, atomic_json, editable_field, fingerprint, patch_config, read_overrides
 from .admin_store import AdminJournal, record_delta
 from .admin_display import DisplayTranslations
+from .admin_display_references import DisplayResolver, MasterDisplayIndex, field_source
 from .admin_profiles import ProfileManager
 from .gameplay import Gameplay, prepare_progress
+from .gameplay_records import identity_field
 from .gameplay_catalog import GAMEPLAY_TABLES, GameplayCatalog, JST
 from .gameplay_rules import DEFAULT_RULES, RULE_BOUNDS, load_rules, validate_rules
-from .masterdata import inspect_payload, unique_map
+from .masterdata import INTEGER_RANGES, inspect_payload, unique_map
 from .newgame import POLICY_VERSION, validate_saved_state
 from .protocol import validate_data
 
@@ -49,6 +52,7 @@ class AdminService:
         self.overrides_path = store.path.parent / "master-overrides.json"
         self.lock = threading.RLock()
         self.tickets = {}
+        self._display_key, self._display_index = None, None
 
     def require_local(self):
         if self.local is None:
@@ -80,8 +84,19 @@ class AdminService:
             db.execute("BEGIN")
             result = self.load(db, profile_id)
         if display:
-            _, catalog = self.local._master_data(result["master_revision"])
-            result["record_display"] = self.display.native_records(result["state"]["records"], catalog)
+            record, index = self.display_data()
+            result["profile_choices"] = [{"id": item["id"], "name": item.get("label") or item["name"],
+                                          "player_name": item.get("player_name", "")} for item in self.profiles()["profiles"]]
+            result["record_sources"] = {"t_presents": ["progress", "features", "presents", "data", "entries"],
+                                        "t_local_profiles": ["profile_choices"]}
+            records = dict(result["state"]["records"])
+            records["t_presents"] = {"up": result["progress"].get("features", {}).get("presents", {}).get("data", {}).get("entries", [])}
+            records["t_local_profiles"] = {"up": result["profile_choices"]}
+            if record["revision"] == result["master_revision"]:
+                resolver = DisplayResolver(index, self.display, records)
+                result["record_display"] = resolver.native_records()
+                result["progress_display"] = resolver.progress(result["progress"])
+            result["record_identity_fields"] = {table: identity_field(table) for table in records}
         return result
 
     def profiles(self):
@@ -99,7 +114,7 @@ class AdminService:
         actions = action_specs(catalog)
         for operation, label in (("follow", "关注本地玩家"), ("unfollow", "取消关注"), ("remove_follower", "移除本地粉丝")):
             actions.append({"id": "social." + operation, "group": "social", "label": label, "description": "修改本地存档之间的关系，下次打开好友页生效。",
-                            "fields": [{"name": "target_id", "label": "目标本地玩家 ID", "type": "integer", "min": 1, "required": True}], "timing": "page"})
+                            "fields": [{"name": "target_id", "label": "目标本地玩家 ID", "type": "integer", "min": 1, "required": True, "source": "t_local_profiles"}], "timing": "page"})
         groups = list(dict.fromkeys(item["group"] for item in actions))
         labels = {"currency": "货币与体力", "inventory": "背包材料", "characters": "角色养成", "character": "角色养成",
                   "affection": "好感与羁绊", "appearance": "服装外观", "equipment": "装备魔晶石", "party": "编队预设",
@@ -228,13 +243,20 @@ class AdminService:
             self.store._state_json(after["progress"])
             delta = record_delta(before["state"]["records"], after["state"]["records"])
             changes = []
-            from .gameplay_records import identity_field
+            _, index = self.display_data()
+            old_display = DisplayResolver(index, self.display, before["state"]["records"])
+            new_display = DisplayResolver(index, self.display, after["state"]["records"])
+            def annotated(table, row, resolver):
+                if row is None:
+                    return None
+                return {**copy.deepcopy(row), "_display": resolver.describe(table, row, native=True)}
             for table, values in delta.items():
                 field = identity_field(table)
                 old = {row[field]: row for row in before["state"]["records"].get(table, {}).get("up", [])}
                 added = sum(row[field] not in old for row in values["up"])
-                examples = [{"id": row[field], "before": old.get(row[field]), "after": row} for row in values["up"][:8]]
-                examples.extend({"id": key, "before": old[key], "after": None} for key in values["down"][:8])
+                examples = [{"id": row[field], "before": annotated(table, old.get(row[field]), old_display),
+                             "after": annotated(table, row, new_display)} for row in values["up"][:8]]
+                examples.extend({"id": key, "before": annotated(table, old[key], old_display), "after": None} for key in values["down"][:8])
                 changes.append({"table": table, "added": added, "updated": len(values["up"]) - added,
                                 "removed": len(values["down"]), "examples": examples})
             if after["progress"] != before["progress"]:
@@ -383,24 +405,57 @@ class AdminService:
         return {"tables": [{"name": name, "count": len(rows), "editable": name in self.local.schema["tables"]}
                            for name, rows in sorted(tables.items())]}
 
-    def master_table(self, name, offset=0, limit=100, query=""):
+    def display_data(self):
         record, tables = self.master_data()
+        config = read_overrides(self.overrides_path)
+        key = (record["sha256"], record["schema_sha256"], fingerprint(config))
+        with self.lock:
+            if key != self._display_key:
+                effective, _ = apply_overrides(tables, self.local.schema, record, config)
+                self._display_index = MasterDisplayIndex(effective, self.local.schema)
+                self._display_key = key
+            return record, self._display_index
+
+    def resolve_labels(self, table, ids):
+        if not isinstance(table, str) or not re.fullmatch(r"m_[a-z0-9_]{1,126}", table):
+            raise AdminError("名称解析仅支持主数据表", 400, "invalid_table")
+        if not isinstance(ids, list) or len(ids) > 100:
+            raise AdminError("每次最多解析 100 个 ID", 400, "invalid_ids")
+        selected = []
+        for value in ids:
+            if type(value) is str and re.fullmatch(r"0|[1-9][0-9]{0,19}", value):
+                value = int(value)
+            if type(value) is not int or not 0 <= value <= 2 ** 64 - 1:
+                raise AdminError("解析 ID 格式无效", 400, "invalid_ids")
+            selected.append(value)
+        record, index = self.display_data()
+        if table not in index.tables:
+            raise AdminError("主表不存在", 404, "invalid_table")
+        resolver = DisplayResolver(index, self.display)
+        labels = {str(value): label for value in dict.fromkeys(selected) if (label := resolver.label(table, value))}
+        return {"labels": labels, "identity_field": index.identity(table),
+                "version": fingerprint({"config": self.config_version(), "master": record["sha256"]})}
+
+    def master_table(self, name, offset=0, limit=100, query=""):
+        record, index = self.display_data()
+        tables = index.tables
         if name not in tables:
             raise AdminError("主表不存在", 404)
-        config = read_overrides(self.overrides_path)
-        effective, _ = apply_overrides(tables, self.local.schema, record, config)
         fields = self.local.schema["tables"].get(name)
         if fields is None:
             fields = [{"name": f"column_{i}", "type": "string"} for i in range(len(tables[name][0]) if tables[name] else 0)]
         result = []
-        lookup = self.display.lookup(name)
-        for index, values in enumerate(effective[name]):
+        resolver = DisplayResolver(index, self.display)
+        source = enumerate(tables[name]) if query else ((offset + i, row) for i, row in enumerate(tables[name][offset:offset + limit]))
+        for row_index, values in source:
             row = dict(zip((field["name"] for field in fields), values))
-            display = self.display.row(name, row, lookup)
+            display = resolver.describe(name, row)
             if not query or query.casefold() in json.dumps([row, display], ensure_ascii=False).casefold():
-                result.append({"index": index, "values": row, "display": display})
-        return {"rows": result[offset:offset + limit], "total": len(result), "offset": offset,
-                "fields": [{**field, "editable": name in self.local.schema["tables"] and editable_field(field, self.local.schema)} for field in fields],
+                result.append({"index": row_index, "values": row, "display": display})
+        return {"rows": result[offset:offset + limit] if query else result, "total": len(result) if query else len(tables[name]), "offset": offset,
+                "fields": [{**field, **(field_source(name, field["name"], tables, {item["name"] for item in fields}) if field["type"] in INTEGER_RANGES else {}),
+                            "editable": name in self.local.schema["tables"] and editable_field(field, self.local.schema)} for field in fields],
+                "identity_field": index.identity(name),
                 "version": fingerprint({"config": self.config_version(), "master": record["sha256"]})}
 
     def catalog(self, name, offset=0, limit=100, query=""):
@@ -424,10 +479,15 @@ class AdminService:
             warnings.extend(self.skipped_profile_warnings(prepared))
             if any(name.endswith("_at") for name in changes) and load_rules(self.rules_path)["event_open_all"]:
                 warnings.append("当前启用了活动自动复刻，关联活动日期可能被复刻规则覆盖；手动设置档期前请调整活动开放规则。")
+            _, before_index = self.display_data()
+            before_row = dict(zip((field["name"] for field in self.local.schema["tables"][table]), tables[table][index]))
+            after_row = dict(zip((field["name"] for field in self.local.schema["tables"][table]), effective[table][index]))
+            before_row["_display"] = DisplayResolver(before_index, self.display).describe(table, before_row)
+            after_row["_display"] = DisplayResolver(MasterDisplayIndex(effective, self.local.schema), self.display).describe(table, after_row)
             return self.ticket({"kind": "master", "before": before, "after": after, "version": self.config_version(),
                                 "profiles": prepared,
                                 "master": record["sha256"], "summary": f"修改 {table} 第 {index + 1} 行", "timing": "master",
-                                "changes": [{"table": table, "index": index, "before": dict(zip((field["name"] for field in self.local.schema["tables"][table]), tables[table][index])), "after": dict(zip((field["name"] for field in self.local.schema["tables"][table]), effective[table][index]))}],
+                                "changes": [{"table": table, "index": index, "before": before_row, "after": after_row}],
                                 "warnings": warnings})
 
     def require_idle_profiles(self, db):

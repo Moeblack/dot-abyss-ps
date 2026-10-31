@@ -13,7 +13,8 @@
     return text.length > max ? text.slice(0, max - 1) + "…" : text;
   };
   const labels = window.ConsoleLabels || {};
-  const { tableLabel, fieldLabel, displayValue, preferredColumns } =
+  const { tableLabel, fieldLabel, displayValue, displayTree, originalValue, rowName,
+    referenceLabel, nativeIdentityField, recordIdentity, sourceRecords, displayRows, matchesRow, createReferenceLookup, preferredColumns } =
     window.ConsoleVocabulary;
   const { profileLabel, activeProfileId, initialProfile, launchState } =
     window.ConsoleLauncher;
@@ -240,9 +241,23 @@
   }
   function details(title, value) {
     $("detail-title").textContent = title;
-    $("detail-content").textContent =
-      typeof value === "string" ? value : pretty(value);
+    const original = originalValue(value), displayed = displayTree(value);
+    const annotated = pretty(original) !== pretty(displayed);
+    $("detail-names").hidden = !annotated;
+    $("detail-original").open = !annotated;
+    $("detail-display").textContent = annotated ? pretty(displayed) : "";
+    $("detail-content").textContent = typeof value === "string" ? value : pretty(original);
     $("detail-dialog").showModal();
+  }
+  function cellContent(row, key) {
+    const label = row._display?.[key], raw = row[key];
+    if (typeof label === "string" && typeof raw === "number")
+      return h("div", { class: "reference-value" }, h("span", {}, label),
+        h("small", {}, (key === "id" || key.endsWith("_id") ? "ID " : "原值 ") + raw));
+    let value = displayValue(row, key);
+    if (key === "table" && /^[mt]_/.test(value)) value = tableLabel(value);
+    if (key === "key" && typeof value === "string") value = fieldLabel(value);
+    return typeof value === "string" ? value : compact(value, 240);
   }
   function empty(title, description, symbol = "grid") {
     return h(
@@ -269,18 +284,15 @@
       });
       if (selected?.(row, index)) tr.classList.add("selected");
       for (const [key] of cols) {
-        let value = displayValue(row, key);
-        if (key === "table" && /^[mt]_/.test(value)) value = tableLabel(value);
-        if (key === "key" && typeof value === "string")
-          value = fieldLabel(value);
+        const value = displayValue(row, key);
         tr.append(
           h(
             "td",
             {
-              title: compact(row[key], 2000),
-              class: typeof value === "string" ? "text-cell" : "number-cell",
+              title: compact(originalValue(row[key]), 2000),
+              class: typeof value === "number" ? "number-cell" : "text-cell",
             },
-            typeof value === "string" ? value : compact(value, 240),
+            cellContent(row, key),
           ),
         );
       }
@@ -359,29 +371,27 @@
     return { element, select };
   }
   function nativeRows(source) {
-    const value = state.snapshot.state?.records?.[source];
-    const rows = Array.isArray(value) ? value : value?.up || [];
+    const rows = sourceRecords(state.snapshot, source);
     const display = state.snapshot.record_display?.[source] || {};
+    const identities = state.snapshot.record_identity_fields || {};
+    const identity = own(identities, source) ? identities[source] : nativeIdentityField(source);
     return rows.map((row) => {
-      const id =
-        row.id ??
-        row.m_event_currency_id ??
-        row.m_nether_code_id ??
-        row.m_event_id ??
-        row.m_event_disaster_quest_id;
-      return { ...row, _display: display[String(id)] || {} };
+      const id = recordIdentity(row, identity);
+      return { ...row, _display: { ...row._display, ...display[String(id)] }, _identity_field: identity };
     });
   }
   async function catalog(source, search = "", offset = 0) {
     if (source.startsWith("t_")) {
-      const rows = nativeRows(source).filter((row) =>
-        JSON.stringify(row).toLowerCase().includes(search.toLowerCase()),
-      );
-      return { rows: rows.slice(offset, offset + 100), total: rows.length };
+      const rows = nativeRows(source).filter((row) => matchesRow(row, search));
+      const identities = state.snapshot.record_identity_fields || {};
+      return { rows: rows.slice(offset, offset + 100), total: rows.length,
+        identity_field: own(identities, source) ? identities[source] : nativeIdentityField(source) };
     }
-    return api(
+    const result = await api(
       query("/admin/catalog", { table: source, q: search, offset, limit: 100 }),
     );
+    const identity = own(result, "identity_field") ? result.identity_field : "id";
+    return { ...result, rows: (result.rows || []).map((row) => ({ ...row, _identity_field: identity })) };
   }
 
   const { parseField, normalizeChoices, fieldChoices, validateJsonNumbers } =
@@ -392,7 +402,9 @@
       onSubmit: (event) => event.preventDefault(),
     });
     const controls = new Map();
-    const form = { element: grid, values, controls, read, set, source };
+    const lookup = createReferenceLookup((table, ids) => api("/admin/resolve", { table, ids }));
+    const form = { element: grid, values, controls, read, set, source,
+      remember: lookup.remember, referenceSummary };
     for (const spec of specs) {
       const type = spec.type || "string",
         value = own(values, spec.name) ? values[spec.name] : spec.default;
@@ -457,7 +469,7 @@
           input,
           h("span", {}, "启用"),
         );
-      else if (spec.source || spec.source_by)
+      else if ((spec.source || spec.source_by) && !spec.readonly && spec.editable !== false)
         inputWrap = h(
           "div",
           { class: "input-combo" },
@@ -465,10 +477,17 @@
           button("选择…", () => pick(form, spec.name), "secondary"),
         );
       wrap.append(inputWrap);
+      const reference = spec.source || spec.source_by
+        ? h("small", { class: "reference-summary", "aria-live": "polite" }) : null;
+      if (reference) wrap.append(reference);
       const hints = [spec.description || spec.help || ""];
       const displayed = values._display?.[spec.name];
-      if (typeof displayed === "string" && displayed !== String(value ?? ""))
+      if (!reference && typeof displayed === "string" && displayed !== String(value ?? ""))
         hints.push("中文显示：" + displayed);
+      if (!reference && displayed && typeof displayed === "object")
+        wrap.append(button("查看原记录名称对照", () => details(labelText, {
+          value, _display: { value: displayed },
+        }), "ghost"));
       if (spec.name && labelText !== spec.name) hints.push(spec.name);
       if (spec.min != null || spec.max != null)
         hints.push(`范围 ${spec.min ?? "不限"}～${spec.max ?? "不限"}`);
@@ -476,15 +495,18 @@
       if (hints.some(Boolean))
         wrap.append(h("small", {}, hints.filter(Boolean).join(" ")));
       grid.append(wrap);
-      controls.set(spec.name, { spec, input, choices });
+      controls.set(spec.name, { spec, input, choices, reference, referenceVersion: 0, referenceTimer: null });
       input.addEventListener("input", () => changed(spec.name));
       input.addEventListener("change", () => changed(spec.name));
     }
     function changed(name) {
       invalidate();
       for (const [key, { spec }] of controls)
-        if (spec.source_by?.field === name && key !== name)
-          set(key, spec.type === "ids" ? [] : "");
+        if (spec.source_by?.field === name && key !== name) {
+          if (spec.readonly || spec.editable === false) updateReference(key, true);
+          else set(key, spec.type === "ids" ? [] : "");
+        }
+      updateReference(name);
     }
     function read() {
       const result = {};
@@ -513,26 +535,74 @@
         item.input.value =
           typeof value === "object" ? pretty(value) : String(value ?? "");
       invalidate();
+      updateReference(name, true);
     }
     function source(name) {
       const spec = controls.get(name).spec;
       if (!spec.source_by) return spec.source;
-      const parent = controls.get(spec.source_by.field);
-      const value = parent.choices
-        ? parent.choices[Number(parent.input.value)]?.value
-        : parent.input.value;
+      const value = selectedValue(spec.source_by.field);
       return spec.source_by.values?.[String(value)];
     }
+    function selectedValue(name) {
+      const item = controls.get(name);
+      if (!item || item.input.value === "") return undefined;
+      return item.choices ? item.choices[Number(item.input.value)]?.value : item.input.value;
+    }
+    function referenceSummary() {
+      return [...controls.values()].filter((item) => item.reference?.textContent)
+        .map((item) => ({ field: item.spec.label || fieldLabel(item.spec.name), value: item.reference.textContent }));
+    }
+    function updateReference(name, immediate = false) {
+      const item = controls.get(name);
+      if (!item?.reference) return;
+      clearTimeout(item.referenceTimer);
+      const version = ++item.referenceVersion, scope = scoped();
+      item.reference.textContent = "";
+      item.reference.title = "";
+      item.referenceTimer = setTimeout(async () => {
+        if (state.currentForm !== form || scope !== scoped() || version !== item.referenceVersion) return;
+        let ids;
+        try {
+          const value = parseField(item.spec, item.input.value);
+          ids = value == null ? [] : Array.isArray(value) ? value : [value];
+          if (ids.some((id) => !Number.isSafeInteger(id))) return;
+        } catch { return; }
+        if (!ids.length) return;
+        const table = source(name);
+        if (!table) {
+          const value = selectedValue(item.spec.source_by?.field);
+          item.reference.textContent = value == null ? "请先选择内容类型。" : "此类型没有名称目录，原 ID 保留。";
+          return;
+        }
+        item.reference.textContent = "正在匹配名称…";
+        try {
+          let result;
+          if (table.startsWith("t_")) {
+            const rows = nativeRows(table), labels = new Map(rows.map((row) => [String(recordIdentity(row)), rowName(row)]));
+            result = { entries: ids.slice(0, 100).map((id) => ({ id, name: labels.get(String(id)) || "" })), omitted: Math.max(0, ids.length - 100) };
+          } else result = await lookup.resolve(table, ids);
+          if (state.currentForm !== form || scope !== scoped() || version !== item.referenceVersion) return;
+          item.reference.textContent = result.entries.map(({ id, name }) => referenceLabel(id, name)).join("；")
+            + (result.omitted ? `；另有 ${result.omitted} 个 ID，完整值保留在输入框中。` : "");
+        } catch (failure) {
+          if (state.currentForm !== form || scope !== scoped() || version !== item.referenceVersion) return;
+          item.reference.textContent = "名称暂不可读取，原 ID 已保留。";
+          item.reference.title = failure.message;
+        }
+      }, immediate ? 0 : 200);
+    }
+    for (const name of controls.keys()) updateReference(name, true);
     return form;
   }
   let picker = null;
   async function pick(form, name) {
+    const spec = form.controls.get(name).spec;
+    if (spec.readonly || spec.editable === false) return;
     const source = form.source(name);
     if (!source) {
       error(new Error("请先选择内容类型。"));
       return;
     }
-    const spec = form.controls.get(name).spec;
     picker = {
       form,
       name,
@@ -570,18 +640,21 @@
         return;
       const holder = $("picker-results");
       const rows = result.rows || [];
+      current.identity_field = own(result, "identity_field") ? result.identity_field
+        : current.source.startsWith("t_") ? nativeIdentityField(current.source) : "id";
       const columns = preferredColumns(rows, 5).filter(
         (key) => !key.includes("description"),
       );
       const body = h("tbody");
       rows.forEach((row) => {
-        const id =
-          row.id ??
-          Object.entries(row).find(([key]) => key.endsWith("_id"))?.[1];
+        const id = recordIdentity(row, current.identity_field);
+        const selectable = id != null && /^-?\d+$/.test(String(id)) && Number.isSafeInteger(Number(id));
         const check = h("input", {
           type: current.multiple ? "checkbox" : "radio",
           name: "picker-row",
-          "aria-label": "选择 " + (displayValue(row, "name") || id),
+          disabled: !selectable,
+          title: selectable ? "" : "该行没有可选择的唯一整数 ID。",
+          "aria-label": selectable ? "选择 " + referenceLabel(id, rowName(row)) : "无可选 ID",
         });
         check.checked = current.selected.has(id);
         const tr = h("tr", { class: check.checked ? "selected" : "" });
@@ -598,15 +671,11 @@
             h(
               "td",
               {
-                title: compact(row[key], 2000),
+                title: compact(originalValue(row[key]), 2000),
                 class:
-                  typeof displayValue(row, key) === "string"
-                    ? "text-cell"
-                    : "number-cell",
+                  typeof displayValue(row, key) === "number" ? "number-cell" : "text-cell",
               },
-              typeof displayValue(row, key) === "string"
-                ? displayValue(row, key)
-                : compact(displayValue(row, key), 240),
+              cellContent(row, key),
             ),
           ),
         );
@@ -1012,11 +1081,14 @@
           ),
         );
       const args = payload.args || payload.changes;
-      if (args && !args.snapshot)
+      if (args && !args.snapshot) {
+        const names = state.currentForm?.referenceSummary?.() || [];
+        if (names.length) target.append(h("h3", {}, "内容名称"), table(names, [["field", "参数"], ["value", "名称与 ID"]]));
         target.append(
           h("h3", {}, "提交内容"),
           h("pre", { class: "preview-args" }, pretty(args)),
         );
+      }
       target.append(
         h(
           "p",
@@ -1080,7 +1152,7 @@
     const records = state.snapshot.state?.records || {},
       progress = state.snapshot.progress || {};
     const names = [
-      ...Object.keys(records).sort(),
+      ...new Set([...Object.keys(records), ...Object.keys(state.snapshot.record_sources || {})].sort()),
       ...Object.keys(progress)
         .sort()
         .map((name) => "progress." + name),
@@ -1102,15 +1174,9 @@
       let value = name.startsWith("progress.")
         ? progress[name.slice(9)]
         : nativeRows(name);
-      const rows = Array.isArray(value)
-        ? value.map((item, index) =>
-            typeof item === "object" && item !== null
-              ? item
-              : { index, value: item },
-          )
-        : value && typeof value === "object"
-          ? Object.entries(value).map(([key, item]) => ({ key, value: item }))
-          : [{ value }];
+      const annotations = name.startsWith("progress.")
+        ? state.snapshot.progress_display?.[name.slice(9)] : undefined;
+      const rows = displayRows(value, annotations);
       result.replaceChildren(
         table(rows.slice(0, 500), null, (row) =>
           details(tableLabel(name), row),
@@ -1360,6 +1426,7 @@
             index: row.index,
             ...row.values,
             _display: row.display || {},
+            _identity_field: own(data, "identity_field") ? data.identity_field : "id",
           }));
           rowbox.replaceChildren(
             table(rows, null, (row) => {
@@ -2010,6 +2077,7 @@
     const ids = [...picker.selected.keys()];
     if (!ids.length) return;
     const { form, name, multiple } = picker;
+    form.remember(picker.source, [...picker.selected.values()], picker.identity_field);
     if (multiple) {
       let prior = [];
       try {

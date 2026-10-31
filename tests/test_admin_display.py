@@ -30,6 +30,6 @@ def test_names_dictionary_matches_game_priority_and_native_input_stays_original(
     catalog = SimpleNamespace(tables={"m_characters": {10: {"id": 10, "name": "アリシア"}}})
     records = {"t_characters": {"up": [{"id": 1, "m_character_id": 10}], "down": []},
                "t_statuses": {"up": [{"id": 1, "name": "アリシア"}], "down": []}}
-    assert translator.native_records(records, catalog) == {"t_characters": {"1": {"m_character_id": "艾莉西亞", "name": "艾莉西亞"}}}
+    assert translator.native_records(records, catalog) == {"t_characters": {"1": {"m_character_id": "艾莉西亞", "name": "艾莉西亞", "_search": ["アリシア"]}}}
     assert records["t_statuses"]["up"][0]["name"] == "アリシア"
     assert translator.dictionary("../outside") == {}

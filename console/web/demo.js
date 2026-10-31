@@ -414,6 +414,7 @@ window.createConsoleDemo = function () {
         version: "demo" + revision,
         master_revision: "demo",
         state: { records },
+        record_identity_fields: { t_characters: "id", t_accessories: "id", t_users: "id" },
         record_display: {
           t_accessories: {
             1: {
@@ -529,6 +530,14 @@ window.createConsoleDemo = function () {
           { name: "m_accessories", count: 3, editable: true },
         ],
       };
+    if (route === "/admin/resolve") {
+      if (!body || !Array.isArray(body.ids) || body.ids.length > 100)
+        throw new Error("演示名称查询每次最多 100 个 ID。");
+      const selected = new Set(body.ids.map(String));
+      const definitions = body.table === "m_accessories" ? accessoryRows : rows;
+      return { labels: Object.fromEntries(definitions.filter((row) => selected.has(String(row.id)))
+        .map((row) => [String(row.id), row._display?.name || row.name])), identity_field: "id", version: "demo-master" };
+    }
     const source = url.searchParams.get("table") || route.split("/").pop();
     const sourceRows = source === "m_accessories" ? accessoryRows : rows;
     const q = (url.searchParams.get("q") || "").toLowerCase(),
@@ -540,10 +549,12 @@ window.createConsoleDemo = function () {
       return {
         rows: filtered.slice(offset, offset + 100),
         total: filtered.length,
+        identity_field: "id",
       };
     if (route.startsWith("/admin/master/table/"))
       return {
         version: "demo-master",
+        identity_field: "id",
         rows: filtered.slice(offset, offset + 100).map((row, index) => {
           const { _display, ...values } = row;
           return { index, values, display: _display || {} };

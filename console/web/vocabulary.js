@@ -836,11 +836,126 @@
   function fieldLabel(name) {
     return exactFields[name] || words(name.replace(/^[mt]_/, ""));
   }
+  const displayMetadata = new Set(["_display", "_identity_field", "_search"]);
+  function originalValue(value) {
+    if (Array.isArray(value)) return value.map(originalValue);
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([key]) => !displayMetadata.has(key))
+          .map(([key, item]) => [key, originalValue(item)]),
+      );
+    return value;
+  }
+  function displayTree(value, annotations) {
+    if (typeof annotations === "string")
+      return typeof value === "number" ? `${annotations}（${value}）` : annotations;
+    if (Array.isArray(value))
+      return value.map((item, index) =>
+        displayTree(item, Array.isArray(annotations) ? annotations[index] : undefined),
+      );
+    if (value && typeof value === "object") {
+      const labels = annotations || value._display || {};
+      const result = Object.fromEntries(
+        Object.entries(value)
+          .filter(([key]) => !displayMetadata.has(key))
+          .map(([key, item]) => [key, displayTree(item, labels[key])]),
+      );
+      if (!Object.hasOwn(result, "name") && typeof labels.name === "string")
+        result.name = labels.name;
+      return result;
+    }
+    return value;
+  }
   function displayValue(row, key) {
-    return row?._display &&
-      Object.prototype.hasOwnProperty.call(row._display, key)
-      ? row._display[key]
-      : row?.[key];
+    return displayTree(row?.[key], row?._display?.[key]);
+  }
+  function rowName(row) {
+    for (const key of ["name", "title", "label"])
+      if (typeof displayValue(row, key) === "string" && displayValue(row, key))
+        return displayValue(row, key);
+    return "";
+  }
+  function referenceLabel(identifier, name) {
+    return name ? `${name}（ID ${identifier}）` : `ID ${identifier}（未匹配名称）`;
+  }
+  function nativeIdentityField(source) {
+    return {
+      t_event_currencies: "m_event_currency_id",
+      t_nether_codes: "m_nether_code_id",
+      t_events: "m_event_id",
+      t_event_disaster_quests: "m_event_disaster_quest_id",
+    }[source] || "id";
+  }
+  function recordIdentity(row, field) {
+    if (field === undefined)
+      field = Object.hasOwn(row || {}, "_identity_field") ? row._identity_field : "id";
+    return typeof field === "string" ? row?.[field] : undefined;
+  }
+  function sourceRecords(snapshot, source) {
+    const records = snapshot.state?.records || {};
+    let value;
+    if (Object.hasOwn(records, source)) value = records[source];
+    else {
+      const path = snapshot.record_sources?.[source];
+      if (!Array.isArray(path) || path.length > 32) return [];
+      value = snapshot;
+      for (const key of path) {
+        if (typeof key !== "string" || !value || typeof value !== "object" || !Object.hasOwn(value, key)) return [];
+        value = value[key];
+      }
+    }
+    return Array.isArray(value) ? value : Array.isArray(value?.up) ? value.up : [];
+  }
+  function displayRows(value, annotations) {
+    if (Array.isArray(value))
+      return value.map((item, index) => {
+        const display = annotations?.[index];
+        if (item && typeof item === "object" && !Array.isArray(item))
+          return display ? { ...item, _display: { ...item._display, ...display } } : item;
+        return { index, value: item, _display: { value: display } };
+      });
+    if (value && typeof value === "object")
+      return Object.entries(value).map(([key, item]) => ({ key, value: item,
+        _display: { value: annotations?.[key] } }));
+    return [{ value, _display: { value: annotations } }];
+  }
+  function matchesRow(row, query) {
+    const normalize = (value) => String(value).normalize("NFKC").toLowerCase();
+    return normalize(JSON.stringify([row, displayTree(row)])).includes(normalize(query).trim());
+  }
+  function createReferenceLookup(load, maximum = 100) {
+    const sources = new Map();
+    const requests = new Map();
+    let sequence = 0;
+    function names(source) {
+      if (!sources.has(source)) sources.set(source, new Map());
+      return sources.get(source);
+    }
+    function remember(source, rows, identity) {
+      for (const row of rows) {
+        const id = recordIdentity(row, identity), name = rowName(row);
+        if (id != null && name) {
+          requests.set(source + ":" + id, ++sequence);
+          names(source).set(String(id), name);
+        }
+      }
+    }
+    async function resolve(source, ids) {
+      const selected = ids.slice(0, maximum), labels = names(source);
+      const missing = [...new Set(selected.map(String))].filter((id) => !labels.has(id));
+      if (missing.length) {
+        const request = ++sequence;
+        for (const id of missing) requests.set(source + ":" + id, request);
+        const response = await load(source, missing);
+        for (const [id, name] of Object.entries(response.labels || {}))
+          if (requests.get(source + ":" + id) === request && typeof name === "string" && name)
+            labels.set(id, name);
+      }
+      return { entries: selected.map((id) => ({ id, name: labels.get(String(id)) || "" })),
+        omitted: Math.max(0, ids.length - selected.length) };
+    }
+    return { remember, resolve };
   }
   function preferredColumns(rows, maximum = 7) {
     const keys = [
@@ -853,7 +968,9 @@
           ]),
       ),
     ].filter((key) => !key.startsWith("_"));
-    const priority = [
+    const identity = rows.find((row) => typeof row._identity_field === "string")?._identity_field;
+    const priority = [...new Set([
+      identity,
       "id",
       "name",
       "label",
@@ -864,11 +981,15 @@
       "type",
       "quality_type",
       "status",
-    ];
+    ].filter(Boolean))];
     return [
       ...priority.filter((key) => keys.includes(key)),
       ...keys.filter((key) => !priority.includes(key)),
     ].slice(0, maximum);
   }
-  return { tableLabel, fieldLabel, displayValue, preferredColumns, terms };
+  return {
+    tableLabel, fieldLabel, displayValue, displayTree, originalValue, rowName,
+    referenceLabel, nativeIdentityField, recordIdentity, sourceRecords, displayRows, matchesRow, createReferenceLookup,
+    preferredColumns, terms,
+  };
 });

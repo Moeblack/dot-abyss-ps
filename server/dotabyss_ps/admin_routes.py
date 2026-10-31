@@ -263,6 +263,12 @@ def install_admin(app, store, local_state):
         authorize(request)
         return invoke(service.catalog, request.query_params.get("table", "m_characters"), *page(request))
 
+    @router.post("/admin/resolve")
+    async def resolve_names(request: Request):
+        authorize(request)
+        data = await body(request, ("table", "ids"))
+        return await run_in_threadpool(invoke, service.resolve_labels, data.get("table"), data.get("ids"))
+
     @router.get("/admin/master/tables")
     def tables(request: Request):
         authorize(request)

@@ -151,7 +151,14 @@
           ×
         </button>
       </div>
-      <pre id="detail-content" class="json-content"></pre>
+      <details id="detail-names" open hidden>
+        <summary class="detail-section-title">名称对照（只读）</summary>
+        <pre id="detail-display" class="json-content"></pre>
+      </details>
+      <details id="detail-original" open>
+        <summary class="detail-section-title">原始数据</summary>
+        <pre id="detail-content" class="json-content"></pre>
+      </details>
       <div class="dialog-footer">
         <span>原始字段用于核对；修改请使用对应操作。</span
         ><button class="button secondary" data-close-dialog>关闭</button>
